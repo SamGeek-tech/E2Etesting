@@ -1,0 +1,35 @@
+@model IEnumerable<OrderWeb.Mvc.Controllers.ProductViewModel>
+@{
+    ViewData["Title"] = "Shop";
+}
+
+<h2 class="mb-4">Products</h2>
+
+@if (TempData["Error"] != null)
+{
+    <div class="alert alert-danger">@TempData["Error"]</div>
+}
+
+<div class="row">
+    @foreach (var product in Model)
+    {
+        <div class="col-md-4 mb-4">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h5 class="card-title">@product.Name</h5>
+                    <p class="card-text">Price: @product.Price.ToString("C")</p>
+                    <p class="card-text">In Stock: @product.StockQuantity</p>
+                    <form asp-action="Order" method="post">
+                        <input type="hidden" name="productId" value="@product.Id" />
+                        <input type="hidden" name="productName" value="@product.Name" />
+                        <input type="hidden" name="price" value="@product.Price" />
+                        <div class="input-group mb-3">
+                            <input type="number" name="quantity" value="1" min="1" max="@product.StockQuantity" class="form-control" />
+                            <button type="submit" class="btn btn-success place-order-btn" @(product.StockQuantity <= 0 ? "disabled" : "")>Order</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    }
+</div>

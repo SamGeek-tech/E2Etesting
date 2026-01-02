@@ -1,0 +1,170 @@
+trigger:
+- main
+
+pool:
+  vmImage: 'windows-latest'
+
+variables:
+  buildConfiguration: 'Release'
+
+stages:
+- stage: Build
+  jobs:
+  - job: BuildJob
+    steps:
+    - task: UseDotNet@2
+      inputs:
+        packageType: 'sdk'
+        version: '8.x'
+
+    - script: dotnet restore
+      displayName: 'Restore Dependencies'
+
+    - script: dotnet build --configuration $(buildConfiguration)
+      displayName: 'Build Solution'
+
+    - script: dotnet test --configuration $(buildConfiguration) --no-build
+      displayName: 'Run Unit Tests'
+
+    - task: DotNetCoreCLI@2
+      inputs:
+        command: 'publish'
+        publishWebProjects: true
+        arguments: '--configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)'
+        zipAfterPublish: true
+
+    - task: PublishBuildArtifacts@1
+      inputs:
+        PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+        ArtifactName: 'drop'
+        publishLocation: 'Container'
+
+- stage: E2E_Testing
+  dependsOn: Build
+  condition: succeeded()
+  jobs:
+  - job: E2E_Test_Job
+    steps:
+    - task: UseDotNet@2
+      inputs:
+        packageType: 'sdk'
+        version: '8.x'
+
+    - script: dotnet build tests/E2E.Tests/E2E.Tests.csproj --configuration $(buildConfiguration)
+      displayName: 'Build E2E Project'
+
+    - script: |
+        pwsh tests/E2E.Tests/bin/$(buildConfiguration)/net8.0/playwright.ps1 install
+      displayName: 'Install Playwright Browsers'
+
+    - script: |
+        Write-Host "Starting Services..."
+        $env:ASPNETCORE_ENVIRONMENT = "Development"
+        
+        Start-Process dotnet -ArgumentList "run --project src/InventoryService.Api/InventoryService.Api.csproj" -NoNewWindow
+        Start-Process dotnet -ArgumentList "run --project src/OrderService.Api/OrderService.Api.csproj" -NoNewWindow
+        Start-Process dotnet -ArgumentList "run --project src/OrderWeb.Mvc/OrderWeb.Mvc.csproj" -NoNewWindow
+        
+        Write-Host "Waiting for services to initialize..."
+        Start-Sleep -Seconds 15
+      displayName: 'Start Microservices'
+
+    - script: |
+        dotnet test tests/E2E.Tests/E2E.Tests.csproj --configuration $(buildConfiguration) --settings tests/E2E.Tests/.runsettings --logger "trx;LogFileName=test_results.xml"
+      displayName: 'Run E2E Tests'
+
+    - task: PublishTestResults@2
+      condition: always()
+      inputs:
+        testResultsFormat: 'VSTest'
+        testResultsFiles: '**/test_results.xml'
+        failTaskOnFailedTests: true
+      displayName: 'Publish E2E Test Results'
+
+  - job: Cypress_Test_Job
+    displayName: 'Run Cypress E2E Tests'
+    steps:
+    - task: NodeTool@0
+      inputs:
+        versionSpec: '20.x'
+      displayName: 'Install Node.js'
+
+    - script: |
+        cd tests/Cypress.Tests
+        npm install
+      displayName: 'Install Cypress Dependencies'
+
+    - script: |
+        Write-Host "Starting Services..."
+        $env:ASPNETCORE_ENVIRONMENT = "Development"
+        
+        Start-Process dotnet -ArgumentList "run --project src/InventoryService.Api/InventoryService.Api.csproj" -NoNewWindow
+        Start-Process dotnet -ArgumentList "run --project src/OrderService.Api/OrderService.Api.csproj" -NoNewWindow
+        Start-Process dotnet -ArgumentList "run --project src/OrderWeb.Mvc/OrderWeb.Mvc.csproj" -NoNewWindow
+        
+        Write-Host "Waiting for services to initialize..."
+        Start-Sleep -Seconds 15
+      displayName: 'Start Microservices'
+
+    - script: |
+        cd tests/Cypress.Tests
+        npx cypress run --browser chrome
+      displayName: 'Run Cypress Tests'
+      env:
+        CYPRESS_baseUrl: 'http://localhost:5002'
+
+    - task: PublishTestResults@2
+      condition: always()
+      inputs:
+        testResultsFormat: 'JUnit'
+        testResultsFiles: 'tests/Cypress.Tests/cypress/results/*.xml'
+        failTaskOnFailedTests: true
+      displayName: 'Publish Cypress Test Results'
+
+    - task: PublishBuildArtifacts@1
+      condition: failed()
+      inputs:
+        PathtoPublish: 'tests/Cypress.Tests/cypress/screenshots'
+        ArtifactName: 'cypress-screenshots'
+      displayName: 'Publish Cypress Screenshots'
+
+    - task: PublishBuildArtifacts@1
+      condition: always()
+      inputs:
+        PathtoPublish: 'tests/Cypress.Tests/cypress/videos'
+        ArtifactName: 'cypress-videos'
+      displayName: 'Publish Cypress Videos'
+
+  - job: Selenium_Test_Job
+    displayName: 'Run Selenium E2E Tests'
+    steps:
+    - task: UseDotNet@2
+      inputs:
+        packageType: 'sdk'
+        version: '8.x'
+
+    - script: |
+        Write-Host "Starting Services..."
+        $env:ASPNETCORE_ENVIRONMENT = "Development"
+        
+        Start-Process dotnet -ArgumentList "run --project src/InventoryService.Api/InventoryService.Api.csproj" -NoNewWindow
+        Start-Process dotnet -ArgumentList "run --project src/OrderService.Api/OrderService.Api.csproj" -NoNewWindow
+        Start-Process dotnet -ArgumentList "run --project src/OrderWeb.Mvc/OrderWeb.Mvc.csproj" -NoNewWindow
+        
+        Write-Host "Waiting for services to initialize..."
+        Start-Sleep -Seconds 15
+      displayName: 'Start Microservices'
+
+    - script: |
+        dotnet test tests/Selenium.Tests/Selenium.Tests.csproj --configuration $(buildConfiguration) --logger "trx;LogFileName=selenium_results.xml"
+      displayName: 'Run Selenium Tests'
+
+    - task: PublishTestResults@2
+      condition: always()
+      inputs:
+        testResultsFormat: 'VSTest'
+        testResultsFiles: '**/selenium_results.xml'
+        failTaskOnFailedTests: true
+      displayName: 'Publish Selenium Test Results'
+
+

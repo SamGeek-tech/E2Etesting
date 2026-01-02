@@ -1,0 +1,182 @@
+# Page snapshot
+
+```yaml
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - navigation [ref=e3]:
+      - generic [ref=e4]:
+        - link "OrderWeb.Mvc" [ref=e5] [cursor=pointer]:
+          - /url: /
+        - generic [ref=e6]:
+          - list [ref=e7]:
+            - listitem [ref=e8]:
+              - link "Home" [ref=e9] [cursor=pointer]:
+                - /url: /
+            - listitem [ref=e10]:
+              - link "Shop" [ref=e11] [cursor=pointer]:
+                - /url: /Shop
+            - listitem [ref=e12]:
+              - link "My Orders" [ref=e13] [cursor=pointer]:
+                - /url: /Orders
+          - list [ref=e14]:
+            - listitem [ref=e15]:
+              - generic [ref=e16]: Hello, test@example.com!
+            - listitem [ref=e17]:
+              - link "Logout" [ref=e18] [cursor=pointer]:
+                - /url: /Account/Logout
+  - main [ref=e20]:
+    - heading "My Orders" [level=2] [ref=e21]
+    - generic [ref=e22]:
+      - generic [ref=e23]:
+        - generic [ref=e24]:
+          - 'heading "Order #21" [level=5] [ref=e25]'
+          - generic [ref=e26]: 1/2/2026 4:15 AM
+        - paragraph [ref=e27]: "Total: $25.50"
+        - list [ref=e28]:
+          - listitem [ref=e29]: Mouse x 1 ($25.50 ea)
+      - generic [ref=e30]:
+        - generic [ref=e31]:
+          - 'heading "Order #20" [level=5] [ref=e32]'
+          - generic [ref=e33]: 1/2/2026 4:15 AM
+        - paragraph [ref=e34]: "Total: $76.50"
+        - list [ref=e35]:
+          - listitem [ref=e36]: Mouse x 3 ($25.50 ea)
+      - generic [ref=e37]:
+        - generic [ref=e38]:
+          - 'heading "Order #19" [level=5] [ref=e39]'
+          - generic [ref=e40]: 1/2/2026 4:14 AM
+        - paragraph [ref=e41]: "Total: $76.50"
+        - list [ref=e42]:
+          - listitem [ref=e43]: Mouse x 3 ($25.50 ea)
+      - generic [ref=e44]:
+        - generic [ref=e45]:
+          - 'heading "Order #18" [level=5] [ref=e46]'
+          - generic [ref=e47]: 1/2/2026 4:14 AM
+        - paragraph [ref=e48]: "Total: $999.99"
+        - list [ref=e49]:
+          - listitem [ref=e50]: Laptop x 1 ($999.99 ea)
+      - generic [ref=e51]:
+        - generic [ref=e52]:
+          - 'heading "Order #17" [level=5] [ref=e53]'
+          - generic [ref=e54]: 1/2/2026 4:14 AM
+        - paragraph [ref=e55]: "Total: $76.50"
+        - list [ref=e56]:
+          - listitem [ref=e57]: Mouse x 3 ($25.50 ea)
+      - generic [ref=e58]:
+        - generic [ref=e59]:
+          - 'heading "Order #16" [level=5] [ref=e60]'
+          - generic [ref=e61]: 1/2/2026 4:12 AM
+        - paragraph [ref=e62]: "Total: $76.50"
+        - list [ref=e63]:
+          - listitem [ref=e64]: Mouse x 3 ($25.50 ea)
+      - generic [ref=e65]:
+        - generic [ref=e66]:
+          - 'heading "Order #15" [level=5] [ref=e67]'
+          - generic [ref=e68]: 12/28/2025 7:44 PM
+        - paragraph [ref=e69]: "Total: $25.50"
+        - list [ref=e70]:
+          - listitem [ref=e71]: Mouse x 1 ($25.50 ea)
+      - generic [ref=e72]:
+        - generic [ref=e73]:
+          - 'heading "Order #14" [level=5] [ref=e74]'
+          - generic [ref=e75]: 12/28/2025 7:23 PM
+        - paragraph [ref=e76]: "Total: $25.50"
+        - list [ref=e77]:
+          - listitem [ref=e78]: Mouse x 1 ($25.50 ea)
+      - generic [ref=e79]:
+        - generic [ref=e80]:
+          - 'heading "Order #13" [level=5] [ref=e81]'
+          - generic [ref=e82]: 12/28/2025 7:23 PM
+        - paragraph [ref=e83]: "Total: $999.99"
+        - list [ref=e84]:
+          - listitem [ref=e85]: Laptop x 1 ($999.99 ea)
+      - generic [ref=e86]:
+        - generic [ref=e87]:
+          - 'heading "Order #12" [level=5] [ref=e88]'
+          - generic [ref=e89]: 12/28/2025 7:23 PM
+        - paragraph [ref=e90]: "Total: $76.50"
+        - list [ref=e91]:
+          - listitem [ref=e92]: Mouse x 3 ($25.50 ea)
+      - generic [ref=e93]:
+        - generic [ref=e94]:
+          - 'heading "Order #11" [level=5] [ref=e95]'
+          - generic [ref=e96]: 12/28/2025 7:22 PM
+        - paragraph [ref=e97]: "Total: $999.99"
+        - list [ref=e98]:
+          - listitem [ref=e99]: Laptop x 1 ($999.99 ea)
+      - generic [ref=e100]:
+        - generic [ref=e101]:
+          - 'heading "Order #9" [level=5] [ref=e102]'
+          - generic [ref=e103]: 12/28/2025 7:22 PM
+        - paragraph [ref=e104]: "Total: $76.50"
+        - list [ref=e105]:
+          - listitem [ref=e106]: Mouse x 3 ($25.50 ea)
+      - generic [ref=e107]:
+        - generic [ref=e108]:
+          - 'heading "Order #10" [level=5] [ref=e109]'
+          - generic [ref=e110]: 12/28/2025 7:22 PM
+        - paragraph [ref=e111]: "Total: $2,250.00"
+        - list [ref=e112]:
+          - listitem [ref=e113]: Keyboard x 30 ($75.00 ea)
+      - generic [ref=e114]:
+        - generic [ref=e115]:
+          - 'heading "Order #8" [level=5] [ref=e116]'
+          - generic [ref=e117]: 12/28/2025 7:22 PM
+        - paragraph [ref=e118]: "Total: $25.50"
+        - list [ref=e119]:
+          - listitem [ref=e120]: Mouse x 1 ($25.50 ea)
+      - generic [ref=e121]:
+        - generic [ref=e122]:
+          - 'heading "Order #7" [level=5] [ref=e123]'
+          - generic [ref=e124]: 12/21/2025 3:00 AM
+        - paragraph [ref=e125]: "Total: $999.99"
+        - list [ref=e126]:
+          - listitem [ref=e127]: Laptop x 1 ($999.99 ea)
+      - generic [ref=e128]:
+        - generic [ref=e129]:
+          - 'heading "Order #6" [level=5] [ref=e130]'
+          - generic [ref=e131]: 12/21/2025 2:27 AM
+        - paragraph [ref=e132]: "Total: $999.99"
+        - list [ref=e133]:
+          - listitem [ref=e134]: Laptop x 1 ($999.99 ea)
+      - generic [ref=e135]:
+        - generic [ref=e136]:
+          - 'heading "Order #5" [level=5] [ref=e137]'
+          - generic [ref=e138]: 12/21/2025 2:26 AM
+        - paragraph [ref=e139]: "Total: $999.99"
+        - list [ref=e140]:
+          - listitem [ref=e141]: Laptop x 1 ($999.99 ea)
+      - generic [ref=e142]:
+        - generic [ref=e143]:
+          - 'heading "Order #4" [level=5] [ref=e144]'
+          - generic [ref=e145]: 12/21/2025 2:26 AM
+        - paragraph [ref=e146]: "Total: $999.99"
+        - list [ref=e147]:
+          - listitem [ref=e148]: Laptop x 1 ($999.99 ea)
+      - generic [ref=e149]:
+        - generic [ref=e150]:
+          - 'heading "Order #3" [level=5] [ref=e151]'
+          - generic [ref=e152]: 12/21/2025 2:26 AM
+        - paragraph [ref=e153]: "Total: $999.99"
+        - list [ref=e154]:
+          - listitem [ref=e155]: Laptop x 1 ($999.99 ea)
+      - generic [ref=e156]:
+        - generic [ref=e157]:
+          - 'heading "Order #2" [level=5] [ref=e158]'
+          - generic [ref=e159]: 12/21/2025 2:25 AM
+        - paragraph [ref=e160]: "Total: $999.99"
+        - list [ref=e161]:
+          - listitem [ref=e162]: Laptop x 1 ($999.99 ea)
+      - generic [ref=e163]:
+        - generic [ref=e164]:
+          - 'heading "Order #1" [level=5] [ref=e165]'
+          - generic [ref=e166]: 12/21/2025 2:19 AM
+        - paragraph [ref=e167]: "Total: $999.99"
+        - list [ref=e168]:
+          - listitem [ref=e169]: Laptop x 1 ($999.99 ea)
+  - contentinfo [ref=e170]:
+    - generic [ref=e171]:
+      - text: © 2025 - OrderWeb.Mvc -
+      - link "Privacy" [ref=e172] [cursor=pointer]:
+        - /url: /Home/Privacy
+```

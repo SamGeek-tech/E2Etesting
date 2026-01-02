@@ -1,0 +1,56 @@
+# Page snapshot
+
+```yaml
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - navigation [ref=e3]:
+      - generic [ref=e4]:
+        - link "OrderWeb.Mvc" [ref=e5] [cursor=pointer]:
+          - /url: /
+        - generic [ref=e6]:
+          - list [ref=e7]:
+            - listitem [ref=e8]:
+              - link "Home" [ref=e9] [cursor=pointer]:
+                - /url: /
+            - listitem [ref=e10]:
+              - link "Shop" [ref=e11] [cursor=pointer]:
+                - /url: /Shop
+            - listitem [ref=e12]:
+              - link "My Orders" [ref=e13] [cursor=pointer]:
+                - /url: /Orders
+          - list [ref=e14]:
+            - listitem [ref=e15]:
+              - generic [ref=e16]: Hello, test@example.com!
+            - listitem [ref=e17]:
+              - link "Logout" [ref=e18] [cursor=pointer]:
+                - /url: /Account/Logout
+  - main [ref=e20]:
+    - heading "Products" [level=2] [ref=e21]
+    - generic [ref=e22]:
+      - generic [ref=e25]:
+        - heading "Laptop" [level=5] [ref=e26]
+        - paragraph [ref=e27]: "Price: $999.99"
+        - paragraph [ref=e28]: "In Stock: 0"
+        - generic [ref=e30]:
+          - spinbutton [ref=e31]: "1"
+          - button "Order" [disabled]
+      - generic [ref=e34]:
+        - heading "Mouse" [level=5] [ref=e35]
+        - paragraph [ref=e36]: "Price: $25.50"
+        - paragraph [ref=e37]: "In Stock: 33"
+        - generic [ref=e39]:
+          - spinbutton [ref=e40]: "1"
+          - button "Order" [ref=e41] [cursor=pointer]
+      - generic [ref=e44]:
+        - heading "Keyboard" [level=5] [ref=e45]
+        - paragraph [ref=e46]: "Price: $75.00"
+        - paragraph [ref=e47]: "In Stock: 0"
+        - generic [ref=e49]:
+          - spinbutton [ref=e50]: "1"
+          - button "Order" [disabled]
+  - contentinfo [ref=e51]:
+    - generic [ref=e52]:
+      - text: © 2025 - OrderWeb.Mvc -
+      - link "Privacy" [ref=e53] [cursor=pointer]:
+        - /url: /Home/Privacy
+```

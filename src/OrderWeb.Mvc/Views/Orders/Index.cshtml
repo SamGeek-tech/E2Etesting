@@ -1,0 +1,32 @@
+@model IEnumerable<OrderWeb.Mvc.Controllers.OrderViewModel>
+@{
+    ViewData["Title"] = "My Orders";
+}
+
+<h2 class="mb-4">My Orders</h2>
+
+@if (!Model.Any())
+{
+    <p>You haven't placed any orders yet.</p>
+}
+else
+{
+    <div class="list-group">
+        @foreach (var order in Model.OrderByDescending(o => o.OrderDate))
+        {
+            <div class="list-group-item order-item">
+                <div class="d-flex w-100 justify-content-between">
+                    <h5 class="mb-1">Order #@order.Id</h5>
+                    <small>@order.OrderDate.ToString("g")</small>
+                </div>
+                <p class="mb-1">Total: @order.TotalAmount.ToString("C")</p>
+                <ul class="small mt-2">
+                    @foreach (var item in order.Items)
+                    {
+                        <li>@item.ProductName x @item.Quantity (@item.UnitPrice.ToString("C") ea)</li>
+                    }
+                </ul>
+            </div>
+        }
+    </div>
+}
