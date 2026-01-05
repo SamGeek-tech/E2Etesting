@@ -21,9 +21,17 @@ public class OrderFlowTests
     public void Setup()
     {
         var options = new ChromeOptions();
-        // options.AddArgument("--headless"); // Uncomment if you want to run headless
+        if (Environment.GetEnvironmentVariable("HEADLESS_MODE") == "true")
+        {
+            options.AddArgument("--headless");
+            options.AddArgument("--no-sandbox");
+            options.AddArgument("--disable-dev-shm-usage");
+        }
         _driver = new ChromeDriver(options);
-        _driver.Manage().Window.Maximize();
+        if (Environment.GetEnvironmentVariable("HEADLESS_MODE") != "true")
+        {
+            _driver.Manage().Window.Maximize();
+        }
         _driver.Manage().Timeouts().ImplicitWait = TimeSpan.FromSeconds(5);
 
         _loginPage = new LoginPage(_driver);

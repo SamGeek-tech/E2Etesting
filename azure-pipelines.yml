@@ -153,17 +153,59 @@ stages:
         Write-Host "Starting Services..."
         $env:ASPNETCORE_ENVIRONMENT = "Development"
         
-        Start-Process dotnet -ArgumentList "run --project src/InventoryService.Api/InventoryService.Api.csproj" -NoNewWindow
-        Start-Process dotnet -ArgumentList "run --project src/OrderService.Api/OrderService.Api.csproj" -NoNewWindow
-        Start-Process dotnet -ArgumentList "run --project src/OrderWeb.Mvc/OrderWeb.Mvc.csproj" -NoNewWindow
+        Start-Process dotnet -ArgumentList "run --project src/InventoryService.Api/InventoryService.Api.csproj" -NoNewWindow -PassThru | Out-Null
+        Start-Process dotnet -ArgumentList "run --project src/OrderService.Api/OrderService.Api.csproj" -NoNewWindow -PassThru | Out-Null
+        Start-Process dotnet -ArgumentList "run --project src/OrderWeb.Mvc/OrderWeb.Mvc.csproj" -NoNewWindow -PassThru | Out-Null
         
         Write-Host "Waiting for services to initialize..."
-        Start-Sleep -Seconds 15
+        $maxAttempts = 30
+        $attempt = 0
+        $allReady = $false
+        
+        while ($attempt -lt $maxAttempts -and -not $allReady) {
+          Start-Sleep -Seconds 2
+          $attempt++
+          
+          $inventoryReady = $false
+          $orderReady = $false
+          $webReady = $false
+          
+          try {
+            $response = Invoke-WebRequest -Uri "http://localhost:5001/api/inventory/health" -TimeoutSec 2 -UseBasicParsing -ErrorAction SilentlyContinue
+            if ($response.StatusCode -eq 200) { $inventoryReady = $true }
+          } catch { }
+          
+          try {
+            $response = Invoke-WebRequest -Uri "http://localhost:5000/swagger/index.html" -TimeoutSec 2 -UseBasicParsing -ErrorAction SilentlyContinue
+            if ($response.StatusCode -eq 200) { $orderReady = $true }
+          } catch { }
+          
+          try {
+            $response = Invoke-WebRequest -Uri "http://localhost:5002" -TimeoutSec 2 -UseBasicParsing -ErrorAction SilentlyContinue
+            if ($response.StatusCode -eq 200) { $webReady = $true }
+          } catch { }
+          
+          $allReady = $inventoryReady -and $orderReady -and $webReady
+          
+          if (-not $allReady) {
+            Write-Host "Attempt $attempt/$maxAttempts - Inventory: $inventoryReady, Order: $orderReady, Web: $webReady"
+          }
+        }
+        
+        if (-not $allReady) {
+          Write-Host "Services did not become ready in time!"
+          exit 1
+        }
+        
+        Write-Host "All services are ready!"
       displayName: 'Start Microservices'
 
     - script: |
+        $env:HEADLESS_MODE = "true"
         dotnet test tests/Selenium.Tests/Selenium.Tests.csproj --configuration $(buildConfiguration) --logger "trx;LogFileName=selenium_results.xml"
       displayName: 'Run Selenium Tests'
+      env:
+        HEADLESS_MODE: 'true'
 
     - task: PublishTestResults@2
       condition: always()
