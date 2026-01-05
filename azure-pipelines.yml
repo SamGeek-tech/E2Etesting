@@ -54,7 +54,13 @@ stages:
       displayName: 'Build E2E Project'
 
     - script: |
-        pwsh tests/E2E.Tests/bin/$(buildConfiguration)/net8.0/playwright.ps1 install
+        $scriptPath = "tests/E2E.Tests/bin/$(buildConfiguration)/net8.0/playwright.ps1"
+        if (Test-Path $scriptPath) {
+          pwsh -ExecutionPolicy Bypass -File $scriptPath install --with-deps chromium
+        } else {
+          dotnet tool install --global Microsoft.Playwright.CLI
+          playwright install --with-deps chromium
+        }
       displayName: 'Install Playwright Browsers'
 
     - script: |
