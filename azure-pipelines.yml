@@ -185,7 +185,7 @@ stages:
         ArtifactName: 'cypress-videos'
       displayName: 'Publish Cypress Videos'
 
-    - job: Selenium_Test_Job
+  - job: Selenium_Test_Job
     displayName: 'Run Selenium E2E Tests'
     steps:
     - task: UseDotNet@2
