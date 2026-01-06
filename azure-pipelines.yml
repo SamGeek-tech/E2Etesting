@@ -548,16 +548,30 @@ stages:
         versionSpec: '20.x'
       displayName: '⚙️ Setup Node.js 20'
 
+    - task: UseDotNet@2
+      inputs:
+        packageType: 'sdk'
+        version: '8.x'
+      displayName: '⚙️ Setup .NET 8 SDK'
+
     - pwsh: |
-        Write-Host "▶️ [CYPRESS 2/3] Building solution..." -ForegroundColor Yellow
+        Write-Host "▶️ [CYPRESS 1/4] Installing Cypress dependencies..." -ForegroundColor Yellow
+        Push-Location tests/Cypress.Tests
+        npm ci
+        Pop-Location
+        Write-Host "✅ [CYPRESS 1/4] Dependencies installed" -ForegroundColor Green
+      displayName: '📦 [1/4] Install Cypress Dependencies'
+
+    - pwsh: |
+        Write-Host "▶️ [CYPRESS 2/4] Building solution..." -ForegroundColor Yellow
         dotnet build E2Etesting.sln --configuration $(buildConfiguration)
-        Write-Host "✅ [CYPRESS 2/3] Solution built" -ForegroundColor Green
-      displayName: '🔨 [2/3] Build Solution'
+        Write-Host "✅ [CYPRESS 2/4] Solution built" -ForegroundColor Green
+      displayName: '🔨 [2/4] Build Solution'
 
     - pwsh: |
         Write-Host ""
         Write-Host "╔════════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
-        Write-Host "║      ▶️ [CYPRESS 3/3] STARTING SERVICES & RUNNING TESTS        ║" -ForegroundColor Cyan
+        Write-Host "║      ▶️ [CYPRESS 3/4] STARTING SERVICES & RUNNING TESTS        ║" -ForegroundColor Cyan
         Write-Host "╚════════════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
         Write-Host ""
         Write-Host "🚀 Starting Microservices for Cypress..."
