@@ -12,10 +12,35 @@ public class ShopPage
     public ShopPage(IWebDriver driver)
     {
         _driver = driver;
-        _wait = new WebDriverWait(driver, TimeSpan.FromSeconds(10));
+        _wait = new WebDriverWait(driver, TimeSpan.FromSeconds(15));
     }
 
-    public void Visit(string baseUrl) => _driver.Navigate().GoToUrl($"{baseUrl}/Shop");
+    public void Visit(string baseUrl)
+    {
+        var url = $"{baseUrl}/Shop";
+        NavigateWithRetry(url);
+    }
+
+    private void NavigateWithRetry(string url, int maxRetries = 3)
+    {
+        Exception? lastException = null;
+        for (int i = 0; i < maxRetries; i++)
+        {
+            try
+            {
+                _driver.Navigate().GoToUrl(url);
+                _wait.Until(d => ((IJavaScriptExecutor)d).ExecuteScript("return document.readyState")?.ToString() == "complete");
+                return;
+            }
+            catch (WebDriverException ex) when (ex.Message.Contains("ERR_CONNECTION_REFUSED") || ex.Message.Contains("net::"))
+            {
+                lastException = ex;
+                Console.WriteLine($"Connection attempt {i + 1}/{maxRetries} failed, retrying in 5 seconds...");
+                Thread.Sleep(5000);
+            }
+        }
+        throw lastException ?? new Exception($"Failed to navigate to {url} after {maxRetries} attempts");
+    }
 
     private IWebElement GetProductCard(string productName)
     {

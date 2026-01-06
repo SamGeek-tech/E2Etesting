@@ -23,16 +23,22 @@ public class OrderFlowTests
         var options = new ChromeOptions();
         if (Environment.GetEnvironmentVariable("HEADLESS_MODE") == "true")
         {
-            options.AddArgument("--headless");
+            options.AddArgument("--headless=new");
             options.AddArgument("--no-sandbox");
             options.AddArgument("--disable-dev-shm-usage");
+            options.AddArgument("--disable-gpu");
+            options.AddArgument("--window-size=1920,1080");
+            options.AddArgument("--disable-extensions");
+            options.AddArgument("--disable-background-networking");
+            options.AddArgument("--ignore-certificate-errors");
         }
         _driver = new ChromeDriver(options);
         if (Environment.GetEnvironmentVariable("HEADLESS_MODE") != "true")
         {
             _driver.Manage().Window.Maximize();
         }
-        _driver.Manage().Timeouts().ImplicitWait = TimeSpan.FromSeconds(5);
+        _driver.Manage().Timeouts().ImplicitWait = TimeSpan.FromSeconds(10);
+        _driver.Manage().Timeouts().PageLoad = TimeSpan.FromSeconds(30);
 
         _loginPage = new LoginPage(_driver);
         _shopPage = new ShopPage(_driver);
