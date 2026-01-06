@@ -185,7 +185,7 @@ stages:
         ArtifactName: 'cypress-videos'
       displayName: 'Publish Cypress Videos'
 
-  - job: Selenium_Test_Job
+    - job: Selenium_Test_Job
     displayName: 'Run Selenium E2E Tests'
     steps:
     - task: UseDotNet@2
@@ -194,50 +194,58 @@ stages:
         version: '8.x'
 
     - script: |
-        Write-Host "Starting Microservices with health checks..."
+        Write-Host "Starting Microservices (detached) for Selenium tests..."
         $env:ASPNETCORE_ENVIRONMENT = "Development"
 
+        # InventoryService.Api → port 5001
         Set-Location "$(Build.SourcesDirectory)/src/InventoryService.Api"
-        Start-Process dotnet -ArgumentList "run --urls=http://127.0.0.1:5001" -NoNewWindow -PassThru
+        Start-Process powershell -ArgumentList "-NoLogo -NoProfile -Command `"dotnet run --urls=http://127.0.0.1:5001`"" -RedirectStandardOutput "inventory.log" -RedirectStandardError "inventory_err.log"
 
+        # OrderService.Api → port 5000
         Set-Location "$(Build.SourcesDirectory)/src/OrderService.Api"
-        Start-Process dotnet -ArgumentList "run --urls=http://127.0.0.1:5000" -NoNewWindow -PassThru
+        Start-Process powershell -ArgumentList "-NoLogo -NoProfile -Command `"dotnet run --urls=http://127.0.0.1:5000`"" -RedirectStandardOutput "order.log" -RedirectStandardError "order_err.log"
 
+        # OrderWeb.Mvc (frontend) → port 5002
         Set-Location "$(Build.SourcesDirectory)/src/OrderWeb.Mvc"
-        Start-Process dotnet -ArgumentList "run --urls=http://127.0.0.1:5002" -NoNewWindow -PassThru
+        Start-Process powershell -ArgumentList "-NoLogo -NoProfile -Command `"dotnet run --urls=http://127.0.0.1:5002`"" -RedirectStandardOutput "web.log" -RedirectStandardError "web_err.log"
 
-        $maxAttempts = 30
-        $attempt = 0
-        $allReady = $false
+        Write-Host "Processes launched in background. Waiting 40 seconds for startup..."
+        Start-Sleep -Seconds 40
 
-        while ($attempt -lt $maxAttempts -and -not $allReady) {
-          Start-Sleep -Seconds 2
-          $attempt++
+        # Health checks with detailed output
+        Write-Host "Performing health checks..."
 
-          $inventoryReady = $false
-          $orderReady = $false
-          $webReady = $false
+        $inventoryReady = $false
+        try {
+          $resp = Invoke-WebRequest -Uri http://127.0.0.1:5001/api/inventory/health -UseBasicParsing -TimeoutSec 10
+          if ($resp.StatusCode -eq 200) { $inventoryReady = $true; Write-Host "Inventory API ready (5001)" }
+        } catch { Write-Warning "Inventory API not ready: $_" }
 
-          try { if ((Invoke-WebRequest -Uri http://127.0.0.1:5001/api/inventory/health -UseBasicParsing -ErrorAction SilentlyContinue).StatusCode -eq 200) { $inventoryReady = $true } } catch {}
-          try { if ((Invoke-WebRequest -Uri http://127.0.0.1:5000/swagger/index.html -UseBasicParsing -ErrorAction SilentlyContinue).StatusCode -eq 200) { $orderReady = $true } } catch {}
-          try { if ((Invoke-WebRequest -Uri http://127.0.0.1:5002 -UseBasicParsing -ErrorAction SilentlyContinue).StatusCode -eq 200) { $webReady = $true } } catch {}
+        $orderReady = $false
+        try {
+          $resp = Invoke-WebRequest -Uri http://127.0.0.1:5000/swagger/index.html -UseBasicParsing -TimeoutSec 10
+          if ($resp.StatusCode -eq 200) { $orderReady = $true; Write-Host "Order API ready (5000)" }
+        } catch { Write-Warning "Order API not ready: $_" }
 
-          $allReady = $inventoryReady -and $orderReady -and $webReady
+        $webReady = $false
+        try {
+          $resp = Invoke-WebRequest -Uri http://127.0.0.1:5002 -UseBasicParsing -TimeoutSec 10
+          if ($resp.StatusCode -eq 200) { $webReady = $true; Write-Host "Web app ready (5002)" }
+        } catch { Write-Warning "Web app not ready: $_" }
 
-          if (-not $allReady) {
-            Write-Host "Attempt $attempt/$maxAttempts - Inventory: $inventoryReady, Order: $orderReady, Web: $webReady"
-          }
-        }
-
-        if (-not $allReady) {
-          Write-Error "Services did not start in time!"
+        if (-not ($inventoryReady -and $orderReady -and $webReady)) {
+          Write-Error "One or more services failed to start properly!"
           exit 1
         }
-        Write-Host "All services are ready!"
-      displayName: 'Start Microservices with Health Checks'
+
+        Write-Host "All services are up and running!"
+      displayName: 'Start Microservices (Detached)'
 
     - script: |
-        dotnet test tests/Selenium.Tests/Selenium.Tests.csproj --configuration $(buildConfiguration) --no-build --logger "trx;LogFileName=selenium_results.trx"
+        dotnet test tests/Selenium.Tests/Selenium.Tests.csproj `
+          --configuration $(buildConfiguration) `
+          --no-build `
+          --logger "trx;LogFileName=selenium_results.trx"
       displayName: 'Run Selenium Tests'
       workingDirectory: '$(Build.SourcesDirectory)'
       env:
@@ -250,3 +258,15 @@ stages:
         testResultsFiles: '**/selenium_results.trx'
         failTaskOnFailedTests: true
       displayName: 'Publish Selenium Test Results'
+
+    # Optional: dump logs if something goes wrong (very useful for debugging)
+    - script: |
+        Write-Host "=== Web App Log (last 50 lines) ==="
+        Get-Content "$(Build.SourcesDirectory)/src/OrderWeb.Mvc/web.log" -Tail 50 -ErrorAction SilentlyContinue || echo "No log file"
+        Write-Host "=== Web App Error Log ==="
+        Get-Content "$(Build.SourcesDirectory)/src/OrderWeb.Mvc/web_err.log" -Tail 50 -ErrorAction SilentlyContinue || echo "No error log"
+
+        Write-Host "=== Order API Log (last 50 lines) ==="
+        Get-Content "$(Build.SourcesDirectory)/src/OrderService.Api/order.log" -Tail 50 -ErrorAction SilentlyContinue || echo "No log"
+      displayName: 'Dump Service Logs on Failure'
+      condition: failed()
