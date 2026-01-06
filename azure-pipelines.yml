@@ -84,7 +84,7 @@ stages:
 
   # ==================== PLAYWRIGHT E2E ====================
   - job: E2E_Test_Job
-    displayName: '🎭 Playwright Tests'
+    displayName: '🎭 Playwright Tests .NET'
     steps:
     - pwsh: |
         Write-Host ""
@@ -267,6 +267,196 @@ stages:
         PathtoPublish: '$(Build.SourcesDirectory)/tests/E2E.Tests'
         ArtifactName: 'playwright-traces-screenshots-videos'
       displayName: '📁 Publish Playwright Artifacts'
+
+  # ==================== PLAYWRIGHT NODE.JS E2E ====================
+  - job: PlaywrightNode_Test_Job
+    displayName: '🎭 Playwright Tests Node.js'
+    steps:
+    - pwsh: |
+        Write-Host ""
+        Write-Host "╔════════════════════════════════════════════════════════════════╗" -ForegroundColor Magenta
+        Write-Host "║        🎭 PLAYWRIGHT NODE.JS E2E TEST JOB STARTED              ║" -ForegroundColor Magenta
+        Write-Host "║────────────────────────────────────────────────────────────────║" -ForegroundColor Magenta
+        Write-Host "║  Job:    PlaywrightNode_Test_Job"
+        Write-Host "║  Agent:  $(Agent.MachineName)"
+        Write-Host "║  Status: INITIALIZING"
+        Write-Host "╚════════════════════════════════════════════════════════════════╝" -ForegroundColor Magenta
+      displayName: '📋 Playwright Node.js Job Info'
+
+    - task: NodeTool@0
+      inputs:
+        versionSpec: '20.x'
+      displayName: '⚙️ Setup Node.js 20'
+
+    - task: UseDotNet@2
+      inputs:
+        packageType: 'sdk'
+        version: '8.x'
+      displayName: '⚙️ Setup .NET 8 SDK'
+
+    - pwsh: |
+        Write-Host "▶️ [PW-NODE 1/4] Installing dependencies..." -ForegroundColor Yellow
+        Push-Location tests/PlaywrightNode.Tests
+        npm ci
+        Pop-Location
+        Write-Host "✅ [PW-NODE 1/4] Dependencies installed" -ForegroundColor Green
+      displayName: '📦 [1/4] Install Node Dependencies'
+
+    - pwsh: |
+        Write-Host "▶️ [PW-NODE 2/4] Installing Playwright browsers..." -ForegroundColor Yellow
+        Push-Location tests/PlaywrightNode.Tests
+        npx playwright install --with-deps chromium
+        Pop-Location
+        Write-Host "✅ [PW-NODE 2/4] Browsers installed" -ForegroundColor Green
+      displayName: '🌐 [2/4] Install Playwright Browsers'
+
+    - pwsh: |
+        Write-Host "▶️ [PW-NODE 3/4] Building solution for services..." -ForegroundColor Yellow
+        dotnet build E2Etesting.sln --configuration $(buildConfiguration)
+        Write-Host "✅ [PW-NODE 3/4] Solution built" -ForegroundColor Green
+      displayName: '🔨 [3/4] Build Solution'
+
+    - pwsh: |
+        Write-Host ""
+        Write-Host "╔════════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
+        Write-Host "║   ▶️ [PW-NODE 4/4] STARTING SERVICES & RUNNING TESTS           ║" -ForegroundColor Cyan
+        Write-Host "╚════════════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
+        Write-Host ""
+        Write-Host "🚀 Starting Microservices for Playwright Node.js..."
+        $env:ASPNETCORE_ENVIRONMENT = "Development"
+        $env:CI = "true"
+
+        # Start Inventory Service
+        Write-Host "   Starting Inventory Service..."
+        $invProc = Start-Process -FilePath "dotnet" -ArgumentList @(
+          "run",
+          "--project", "src/InventoryService.Api/InventoryService.Api.csproj",
+          "--configuration", "$(buildConfiguration)",
+          "--no-build",
+          "--urls=http://127.0.0.1:5001"
+        ) -PassThru -RedirectStandardOutput "$(Build.SourcesDirectory)/inventory.log" -RedirectStandardError "$(Build.SourcesDirectory)/inventory_err.log"
+        Write-Host "   ✓ Inventory Service started (PID: $($invProc.Id))"
+
+        # Start Order Service
+        Write-Host "   Starting Order Service..."
+        $ordProc = Start-Process -FilePath "dotnet" -ArgumentList @(
+          "run",
+          "--project", "src/OrderService.Api/OrderService.Api.csproj",
+          "--configuration", "$(buildConfiguration)",
+          "--no-build",
+          "--urls=http://127.0.0.1:5000"
+        ) -PassThru -RedirectStandardOutput "$(Build.SourcesDirectory)/order.log" -RedirectStandardError "$(Build.SourcesDirectory)/order_err.log"
+        Write-Host "   ✓ Order Service started (PID: $($ordProc.Id))"
+
+        # Start Web MVC
+        Write-Host "   Starting Web MVC..."
+        $webProc = Start-Process -FilePath "dotnet" -ArgumentList @(
+          "run",
+          "--project", "src/OrderWeb.Mvc/OrderWeb.Mvc.csproj",
+          "--configuration", "$(buildConfiguration)",
+          "--no-build",
+          "--urls=http://127.0.0.1:5002"
+        ) -PassThru -RedirectStandardOutput "$(Build.SourcesDirectory)/web.log" -RedirectStandardError "$(Build.SourcesDirectory)/web_err.log"
+        Write-Host "   ✓ Web MVC started (PID: $($webProc.Id))"
+
+        Write-Host ""
+        Write-Host "⏳ STATE: WAITING FOR SERVICES..." -ForegroundColor Yellow
+        $maxWait = 120
+        $elapsed = 0
+        $allReady = $false
+
+        while ($elapsed -lt $maxWait -and -not $allReady) {
+          Start-Sleep -Seconds 5
+          $elapsed += 5
+          
+          $webOk = $false
+          $invOk = $false
+          $ordOk = $false
+          
+          try { 
+            Invoke-WebRequest -Uri "http://127.0.0.1:5002" -TimeoutSec 3 -UseBasicParsing -ErrorAction Stop | Out-Null
+            $webOk = $true 
+          } catch { }
+          
+          try { 
+            Invoke-WebRequest -Uri "http://127.0.0.1:5001/api/inventory" -TimeoutSec 3 -UseBasicParsing -ErrorAction Stop | Out-Null
+            $invOk = $true 
+          } catch { }
+          
+          try { 
+            Invoke-WebRequest -Uri "http://127.0.0.1:5000/swagger/index.html" -TimeoutSec 3 -UseBasicParsing -ErrorAction Stop | Out-Null
+            $ordOk = $true 
+          } catch { }
+          
+          $allReady = $webOk -and $invOk -and $ordOk
+          $webStatus = if ($webOk) { "✅" } else { "⏳" }
+          $invStatus = if ($invOk) { "✅" } else { "⏳" }
+          $ordStatus = if ($ordOk) { "✅" } else { "⏳" }
+          Write-Host "   [$elapsed`s] Web:$webStatus Inventory:$invStatus Order:$ordStatus"
+        }
+
+        if (-not $allReady) {
+          Write-Host ""
+          Write-Host "❌ STATE: SERVICES FAILED TO START" -ForegroundColor Red
+          Write-Host "=== DUMPING ERROR LOGS ===" -ForegroundColor Red
+          Write-Host "--- inventory_err.log ---"
+          Get-Content "$(Build.SourcesDirectory)/inventory_err.log" -ErrorAction SilentlyContinue
+          Write-Host "--- order_err.log ---"
+          Get-Content "$(Build.SourcesDirectory)/order_err.log" -ErrorAction SilentlyContinue
+          Write-Host "--- web_err.log ---"
+          Get-Content "$(Build.SourcesDirectory)/web_err.log" -ErrorAction SilentlyContinue
+          exit 1
+        }
+
+        Write-Host ""
+        Write-Host "✅ STATE: ALL SERVICES READY" -ForegroundColor Green
+        Write-Host ""
+        Write-Host "🧪 STATE: RUNNING PLAYWRIGHT NODE.JS TESTS..." -ForegroundColor Cyan
+        
+        # Run tests IN THE SAME SCRIPT to keep services alive
+        Push-Location "tests/PlaywrightNode.Tests"
+        try {
+          npx playwright test --reporter=junit,html
+        } finally {
+          Pop-Location
+          Write-Host ""
+          Write-Host "🛑 STATE: STOPPING SERVICES..." -ForegroundColor Yellow
+          if ($invProc -and !$invProc.HasExited) { Stop-Process -Id $invProc.Id -Force -ErrorAction SilentlyContinue }
+          if ($ordProc -and !$ordProc.HasExited) { Stop-Process -Id $ordProc.Id -Force -ErrorAction SilentlyContinue }
+          if ($webProc -and !$webProc.HasExited) { Stop-Process -Id $webProc.Id -Force -ErrorAction SilentlyContinue }
+          Write-Host "✅ Services stopped" -ForegroundColor Green
+        }
+        
+        Write-Host ""
+        Write-Host "╔════════════════════════════════════════════════════════════════╗" -ForegroundColor Magenta
+        Write-Host "║         🎭 PLAYWRIGHT NODE.JS TESTS COMPLETED                  ║" -ForegroundColor Magenta
+        Write-Host "╚════════════════════════════════════════════════════════════════╝" -ForegroundColor Magenta
+      displayName: '🧪 [4/4] Start Services & Run Playwright Node.js Tests'
+      workingDirectory: '$(Build.SourcesDirectory)'
+      env:
+        CI: 'true'
+
+    - task: PublishTestResults@2
+      condition: always()
+      inputs:
+        testResultsFormat: 'JUnit'
+        testResultsFiles: 'tests/PlaywrightNode.Tests/test-results/results.xml'
+        failTaskOnFailedTests: true
+      displayName: '📊 Publish Playwright Node.js Test Results'
+
+    - task: PublishBuildArtifacts@1
+      condition: always()
+      inputs:
+        PathtoPublish: 'tests/PlaywrightNode.Tests/playwright-report'
+        ArtifactName: 'playwright-node-report'
+      displayName: '📁 Publish Playwright Node.js Report'
+
+    - task: PublishBuildArtifacts@1
+      condition: always()
+      inputs:
+        PathtoPublish: 'tests/PlaywrightNode.Tests/test-results'
+        ArtifactName: 'playwright-node-traces'
+      displayName: '📁 Publish Playwright Node.js Traces'
 
   # ==================== CYPRESS E2E ====================
   - job: Cypress_Test_Job
