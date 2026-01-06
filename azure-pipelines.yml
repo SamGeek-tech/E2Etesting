@@ -104,23 +104,25 @@ stages:
       displayName: '⚙️ Setup .NET 8 SDK'
 
     - pwsh: |
-        Write-Host "▶️ [PLAYWRIGHT 1/4] Installing Playwright browsers..." -ForegroundColor Yellow
-        $scriptPath = "tests/E2E.Tests/bin/$(buildConfiguration)/net8.0/playwright.ps1"
-        if (Test-Path $scriptPath) {
-          pwsh -ExecutionPolicy Bypass -File $scriptPath install --with-deps chromium
-        } else {
-          dotnet tool install --global Microsoft.Playwright.CLI
-          playwright install --with-deps chromium
-        }
-        Write-Host "✅ [PLAYWRIGHT 1/4] Browsers installed" -ForegroundColor Green
-      displayName: '🌐 [1/4] Install Playwright Browsers'
+        Write-Host "▶️ [PLAYWRIGHT 1/4] Building test project..." -ForegroundColor Yellow
+        dotnet build tests/E2E.Tests/E2E.Tests.csproj --configuration $(buildConfiguration)
+        Write-Host "✅ [PLAYWRIGHT 1/4] Test project built" -ForegroundColor Green
+      displayName: '🔨 [1/4] Build Playwright E2E Project'
+      workingDirectory: '$(Build.SourcesDirectory)'
 
     - pwsh: |
-        Write-Host "▶️ [PLAYWRIGHT 2/4] Building test project..." -ForegroundColor Yellow
-        dotnet build tests/E2E.Tests/E2E.Tests.csproj --configuration $(buildConfiguration) --no-restore
-        Write-Host "✅ [PLAYWRIGHT 2/4] Test project built" -ForegroundColor Green
-      displayName: '🔨 [2/4] Build Playwright E2E Project'
-      workingDirectory: '$(Build.SourcesDirectory)'
+        Write-Host "▶️ [PLAYWRIGHT 2/4] Installing Playwright browsers..." -ForegroundColor Yellow
+        $scriptPath = "tests/E2E.Tests/bin/$(buildConfiguration)/net8.0/playwright.ps1"
+        if (Test-Path $scriptPath) {
+          Write-Host "   Found playwright.ps1 at: $scriptPath"
+          pwsh -ExecutionPolicy Bypass -File $scriptPath install --with-deps chromium
+        } else {
+          Write-Host "   playwright.ps1 not found, using dotnet tool..." -ForegroundColor Yellow
+          dotnet tool update --global Microsoft.Playwright.CLI 2>$null
+          playwright install --with-deps chromium
+        }
+        Write-Host "✅ [PLAYWRIGHT 2/4] Browsers installed" -ForegroundColor Green
+      displayName: '🌐 [2/4] Install Playwright Browsers'
 
     - pwsh: |
         Write-Host "▶️ [PLAYWRIGHT 3/4] Building solution for services..." -ForegroundColor Yellow
