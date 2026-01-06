@@ -1,56 +1,38 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.IdentityModel.Tokens;
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
-using System.Text;
+using OrderService.Application.DTOs;
+using OrderService.Application.Interfaces;
 
 namespace OrderService.Api.Controllers;
 
+/// <summary>
+/// API controller for authentication operations.
+/// </summary>
 [ApiController]
 [Route("api/[controller]")]
 public class IdentityController : ControllerBase
 {
-    private readonly IConfiguration _config;
+    private readonly IIdentityService _identityService;
 
-    public IdentityController(IConfiguration config)
+    public IdentityController(IIdentityService identityService)
     {
-        _config = config;
+        _identityService = identityService;
     }
 
+    /// <summary>
+    /// Authenticates a user and returns a JWT token.
+    /// </summary>
     [HttpPost("login")]
+    [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public IActionResult Login([FromBody] LoginRequest request)
     {
-        // Simple mock authentication
-        if (request.Email == "test@example.com" && request.Password == "Password123!")
+        var result = _identityService.Login(request.Email, request.Password);
+
+        if (!result.Success)
         {
-            var token = GenerateJwtToken(request.Email);
-            return Ok(new { token });
+            return Unauthorized(result.ErrorMessage);
         }
 
-        return Unauthorized();
-    }
-
-    private string GenerateJwtToken(string email)
-    {
-        var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["Jwt:Key"] ?? "super_secret_key_that_is_long_enough_123"));
-        var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
-
-        var claims = new[]
-        {
-            new Claim(JwtRegisteredClaimNames.Sub, email),
-            new Claim(JwtRegisteredClaimNames.Email, email),
-            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
-        };
-
-        var token = new JwtSecurityToken(
-            issuer: _config["Jwt:Issuer"] ?? "OrderService",
-            audience: _config["Jwt:Audience"] ?? "OrderWeb",
-            claims: claims,
-            expires: DateTime.Now.AddMinutes(120),
-            signingCredentials: credentials);
-
-        return new JwtSecurityTokenHandler().WriteToken(token);
+        return Ok(new { token = result.Token });
     }
 }
-
-public record LoginRequest(string Email, string Password);

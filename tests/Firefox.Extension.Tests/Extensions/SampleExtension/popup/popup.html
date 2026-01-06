@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sample Extension</title>
+    <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+    <div class="popup-container">
+        <header class="popup-header">
+            <h1>🔧 Sample Extension</h1>
+            <span class="version">v1.0.0</span>
+        </header>
+        
+        <main class="popup-content">
+            <div class="status-section">
+                <div class="status-indicator active" id="status-indicator">
+                    <span class="status-dot"></span>
+                    <span class="status-text">Active</span>
+                </div>
+            </div>
+            
+            <div class="actions-section">
+                <button id="highlight-links" class="action-btn primary">
+                    <span class="btn-icon">🔗</span>
+                    Highlight Links
+                </button>
+                
+                <button id="get-page-info" class="action-btn secondary">
+                    <span class="btn-icon">📊</span>
+                    Page Info
+                </button>
+            </div>
+            
+            <div class="info-panel" id="info-panel" style="display: none;">
+                <h3>Page Information</h3>
+                <div class="info-grid">
+                    <div class="info-item">
+                        <span class="info-label">Title:</span>
+                        <span class="info-value" id="page-title">-</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Links:</span>
+                        <span class="info-value" id="page-links">-</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Images:</span>
+                        <span class="info-value" id="page-images">-</span>
+                    </div>
+                </div>
+            </div>
+        </main>
+        
+        <footer class="popup-footer">
+            <span>Test Extension for Playwright</span>
+        </footer>
+    </div>
+    
+    <script src="popup.js"></script>
+</body>
+</html>
+

@@ -1,0 +1,12 @@
+This directory should contain extension icons:
+- icon-48.png (48x48 pixels)
+- icon-96.png (96x96 pixels)
+
+For testing purposes, you can use placeholder images or real icons.
+The extension will work without icons, but Firefox will show a default icon.
+
+To create icons:
+1. Use any PNG image editor
+2. Create 48x48 and 96x96 pixel versions
+3. Name them icon-48.png and icon-96.png
+

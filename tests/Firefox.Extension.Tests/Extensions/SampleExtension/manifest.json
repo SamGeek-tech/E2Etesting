@@ -1,0 +1,37 @@
+{
+  "manifest_version": 2,
+  "name": "Sample Extension",
+  "version": "1.0.0",
+  "description": "A sample Firefox extension for testing with Playwright",
+  "icons": {
+    "48": "icons/icon-48.png",
+    "96": "icons/icon-96.png"
+  },
+  "permissions": [
+    "storage",
+    "activeTab",
+    "tabs"
+  ],
+  "browser_action": {
+    "default_icon": {
+      "19": "icons/icon-48.png",
+      "38": "icons/icon-96.png"
+    },
+    "default_title": "Sample Extension",
+    "default_popup": "popup/popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content/content-script.js"],
+      "css": ["content/content-style.css"]
+    }
+  ],
+  "background": {
+    "scripts": ["background/background.js"]
+  },
+  "web_accessible_resources": [
+    "icons/*"
+  ]
+}
+

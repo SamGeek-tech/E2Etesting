@@ -64,6 +64,30 @@
             "${workspaceFolder}/E2Etesting.sln"
         ],
         "problemMatcher": "$msCompile"
+    },
+    {
+        "label": "build-e2e-tests",
+        "command": "dotnet",
+        "type": "process",
+        "args": [
+            "build",
+            "${workspaceFolder}/tests/E2E.Tests/E2E.Tests.csproj",
+            "/property:GenerateFullPaths=true"
+        ],
+        "problemMatcher": "$msCompile",
+        "group": "build"
+    },
+    {
+        "label": "build-firefox-tests",
+        "command": "dotnet",
+        "type": "process",
+        "args": [
+            "build",
+            "${workspaceFolder}/tests/Firefox.Extension.Tests/Firefox.Extension.Tests.csproj",
+            "/property:GenerateFullPaths=true"
+        ],
+        "problemMatcher": "$msCompile",
+        "group": "build"
     }
     ]
   }

@@ -1,79 +1,84 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using OrderService.Api.Data;
-using OrderService.Api.Models;
+using OrderService.Application.DTOs;
+using OrderService.Application.Interfaces;
 using System.Security.Claims;
 
 namespace OrderService.Api.Controllers;
 
+/// <summary>
+/// API controller for order operations.
+/// Thin controller that delegates to application service.
+/// </summary>
 [ApiController]
 [Route("api/[controller]")]
 [Authorize]
 public class OrdersController : ControllerBase
 {
-    private readonly OrderDbContext _context;
-    private readonly HttpClient _httpClient;
-    private readonly IConfiguration _config;
+    private readonly IOrderService _orderService;
 
-    public OrdersController(OrderDbContext context, IHttpClientFactory httpClientFactory, IConfiguration config)
+    public OrdersController(IOrderService orderService)
     {
-        _context = context;
-        _httpClient = httpClientFactory.CreateClient();
-        _config = config;
+        _orderService = orderService;
     }
 
+    /// <summary>
+    /// Gets all orders for the authenticated user.
+    /// </summary>
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<Order>>> GetOrders()
+    [ProducesResponseType(typeof(IEnumerable<OrderDto>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<IEnumerable<OrderDto>>> GetOrders(CancellationToken cancellationToken)
     {
-        var email = User.FindFirstValue(ClaimTypes.Email);
-        return await _context.Orders.Include(o => o.Items)
-            .Where(o => o.UserEmail == email)
-            .ToListAsync();
+        var email = User.FindFirstValue(ClaimTypes.Email) ?? string.Empty;
+        var orders = await _orderService.GetUserOrdersAsync(email, cancellationToken);
+        return Ok(orders);
     }
 
-    [HttpPost]
-    public async Task<IActionResult> CreateOrder([FromBody] CreateOrderRequest request)
+    /// <summary>
+    /// Gets a specific order by ID.
+    /// </summary>
+    [HttpGet("{id}")]
+    [ProducesResponseType(typeof(OrderDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<OrderDto>> GetOrder(int id, CancellationToken cancellationToken)
     {
+        var order = await _orderService.GetOrderByIdAsync(id, cancellationToken);
+        
+        if (order is null)
+            return NotFound();
+
+        // Verify the order belongs to the current user
         var email = User.FindFirstValue(ClaimTypes.Email);
-        
-        // 1. Call InventoryService to reserve stock
-        var inventoryUrl = _config["Services:InventoryUrl"] ?? "http://localhost:5001";
-        
-        foreach (var item in request.Items)
+        if (order.UserEmail != email)
+            return Forbid();
+
+        return Ok(order);
+    }
+
+    /// <summary>
+    /// Creates a new order.
+    /// </summary>
+    [HttpPost]
+    [ProducesResponseType(typeof(OrderDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> CreateOrder([FromBody] CreateOrderRequest request, CancellationToken cancellationToken)
+    {
+        var email = User.FindFirstValue(ClaimTypes.Email) ?? "unknown";
+        var result = await _orderService.CreateOrderAsync(email, request, cancellationToken);
+
+        if (!result.Success)
         {
-            var response = await _httpClient.PostAsJsonAsync($"{inventoryUrl}/api/inventory/reserve", new { ProductId = item.ProductId, Quantity = item.Quantity });
-            if (!response.IsSuccessStatusCode)
-            {
-                return BadRequest($"Failed to reserve stock for product {item.ProductId}");
-            }
+            return BadRequest(result.ErrorMessage);
         }
 
-        // 2. Create Order
-        var order = new Order
-        {
-            UserEmail = email ?? "unknown",
-            OrderDate = DateTime.UtcNow,
-            TotalAmount = request.Items.Sum(i => i.UnitPrice * i.Quantity),
-            Items = request.Items.Select(i => new OrderItem
-            {
-                ProductId = i.ProductId,
-                ProductName = i.ProductName,
-                Quantity = i.Quantity,
-                UnitPrice = i.UnitPrice
-            }).ToList()
-        };
-
-        _context.Orders.Add(order);
-        await _context.SaveChangesAsync();
-
-        return CreatedAtAction(nameof(GetOrders), new { id = order.Id }, order);
+        return CreatedAtAction(nameof(GetOrder), new { id = result.Order!.Id }, result.Order);
     }
 
+    /// <summary>
+    /// Health check endpoint.
+    /// </summary>
     [HttpGet("health")]
     [AllowAnonymous]
+    [ProducesResponseType(StatusCodes.Status200OK)]
     public IActionResult Health() => Ok(new { status = "Healthy" });
 }
-
-public record CreateOrderRequest(List<CreateOrderItemRequest> Items);
-public record CreateOrderItemRequest(int ProductId, string ProductName, int Quantity, decimal UnitPrice);

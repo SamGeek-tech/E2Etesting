@@ -1,26 +1,29 @@
-using Microsoft.EntityFrameworkCore;
-using InventoryService.Api.Data;
+using InventoryService.Application;
+using InventoryService.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
+// Add services to the container
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(options =>
+{
+    options.SwaggerDoc("v1", new() { Title = "Inventory Service API", Version = "v1" });
+});
 
-builder.Services.AddDbContext<InventoryDbContext>(options =>
-    options.UseSqlite("Data Source=inventory.db"));
+// Clean Architecture layers
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") 
+    ?? "Data Source=inventory.db";
+
+builder.Services.AddApplication();  // InventoryService.Application
+builder.Services.AddInfrastructure(connectionString);  // InventoryService.Infrastructure
 
 var app = builder.Build();
 
 // Ensure database is created
-using (var scope = app.Services.CreateScope())
-{
-    var db = scope.ServiceProvider.GetRequiredService<InventoryDbContext>();
-    db.Database.EnsureCreated();
-}
+InventoryService.Infrastructure.DependencyInjection.EnsureDatabaseCreated(app.Services);
 
-// Configure the HTTP request pipeline.
+// Configure the HTTP request pipeline
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -28,7 +31,6 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseAuthorization();
-
 app.MapControllers();
 
 app.Run();

@@ -18,6 +18,84 @@
         "type": "dotnet",
         "request": "launch",
         "projectPath": "${workspaceFolder}/src/OrderWeb.Mvc/OrderWeb.Mvc.csproj"
+      },
+      {
+        "name": "Debug Playwright Tests (E2E.Tests)",
+        "type": "coreclr",
+        "request": "launch",
+        "preLaunchTask": "build-e2e-tests",
+        "program": "dotnet",
+        "args": [
+          "test",
+          "${workspaceFolder}/tests/E2E.Tests/E2E.Tests.csproj",
+          "--no-build",
+          "--filter",
+          "${input:testFilter}"
+        ],
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "HEADED": "1",
+          "PWDEBUG": "1"
+        },
+        "console": "integratedTerminal",
+        "stopAtEntry": false
+      },
+      {
+        "name": "Debug Firefox Extension Tests",
+        "type": "coreclr",
+        "request": "launch",
+        "preLaunchTask": "build-firefox-tests",
+        "program": "dotnet",
+        "args": [
+          "test",
+          "${workspaceFolder}/tests/Firefox.Extension.Tests/Firefox.Extension.Tests.csproj",
+          "--no-build",
+          "--filter",
+          "${input:testFilter}"
+        ],
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "PWDEBUG": "1"
+        },
+        "console": "integratedTerminal",
+        "stopAtEntry": false
+      },
+      {
+        "name": "Debug Playwright (Headed Mode)",
+        "type": "coreclr",
+        "request": "launch",
+        "preLaunchTask": "build-e2e-tests",
+        "program": "dotnet",
+        "args": [
+          "test",
+          "${workspaceFolder}/tests/E2E.Tests/E2E.Tests.csproj",
+          "--no-build"
+        ],
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "HEADED": "1"
+        },
+        "console": "integratedTerminal"
+      },
+      {
+        "name": "Debug Current Playwright Test File",
+        "type": "coreclr",
+        "request": "launch",
+        "preLaunchTask": "build-e2e-tests",
+        "program": "dotnet",
+        "args": [
+          "test",
+          "${workspaceFolder}/tests/E2E.Tests/E2E.Tests.csproj",
+          "--no-build",
+          "--filter",
+          "FullyQualifiedName~${fileBasenameNoExtension}"
+        ],
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "HEADED": "1",
+          "PWDEBUG": "1"
+        },
+        "console": "integratedTerminal"
       }
     ],
     "compounds": [
@@ -29,6 +107,14 @@
           "WebApp (.NET 8)"
         ],
         "stopAll": true
+      }
+    ],
+    "inputs": [
+      {
+        "id": "testFilter",
+        "type": "promptString",
+        "description": "Test filter (e.g., 'TestMethodName' or 'FullyQualifiedName~ClassName')",
+        "default": ""
       }
     ]
   }
