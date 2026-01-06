@@ -14,9 +14,41 @@ public class ExtendedScenarios : PageTest
     [SetUp]
     public async Task Setup()
     {
+        // Start tracing for ALL tests
+        await Context.Tracing.StartAsync(new TracingStartOptions
+        {
+            Screenshots = true,
+            Snapshots = true,
+            Sources = true,
+            Title = "PPlayWrightTestName"
+        });
+
         var loginPage = new LoginPage(Page);
         await loginPage.GotoAsync(_baseUrl);
         await loginPage.LoginAsync("test@example.com", "Password123!");
+    }
+
+    [TearDown]
+    public async Task GlobalTeardown()
+    {
+        if (TestContext.CurrentContext.Result.Outcome.Status == NUnit.Framework.Interfaces.TestStatus.Failed)
+        {
+            // Save trace only on failure
+            var tracePath = Path.Combine(TestContext.CurrentContext.WorkDirectory,
+                $"trace-{TestContext.CurrentContext.Test.Name}.zip");
+            await Context.Tracing.StopAsync(new TracingStopOptions
+            {
+                Path = tracePath
+            });
+
+            // Also take a screenshot on failure
+            var screenshotPath = Path.Combine(TestContext.CurrentContext.WorkDirectory,
+                $"screenshot-{TestContext.CurrentContext.Test.Name}.png");
+            await Page.ScreenshotAsync(new PageScreenshotOptions { Path = screenshotPath });
+
+            Console.WriteLine($"Trace saved to: {tracePath}");
+            Console.WriteLine($"Screenshot saved to: {screenshotPath}");
+        }
     }
 
     [Test]

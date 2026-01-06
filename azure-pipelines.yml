@@ -67,25 +67,41 @@ stages:
         Write-Host "Starting Services..."
         $env:ASPNETCORE_ENVIRONMENT = "Development"
         
-        Start-Process dotnet -ArgumentList "run --project src/InventoryService.Api/InventoryService.Api.csproj" -NoNewWindow
-        Start-Process dotnet -ArgumentList "run --project src/OrderService.Api/OrderService.Api.csproj" -NoNewWindow
-        Start-Process dotnet -ArgumentList "run --project src/OrderWeb.Mvc/OrderWeb.Mvc.csproj" -NoNewWindow
+        Start-Process dotnet -ArgumentList "run --project src/InventoryService.Api/InventoryService.Api.csproj --urls=http://127.0.0.1:5001" -NoNewWindow
+        Start-Process dotnet -ArgumentList "run --project src/OrderService.Api/OrderService.Api.csproj --urls=http://127.0.0.1:5000" -NoNewWindow
+        Start-Process dotnet -ArgumentList "run --project src/OrderWeb.Mvc/OrderWeb.Mvc.csproj --urls=http://127.0.0.1:5002" -NoNewWindow
         
         Write-Host "Waiting for services to initialize..."
         Start-Sleep -Seconds 15
       displayName: 'Start Microservices'
 
-    - script: |
-        dotnet test tests/E2E.Tests/E2E.Tests.csproj --configuration $(buildConfiguration) --settings tests/E2E.Tests/.runsettings --logger "trx;LogFileName=test_results.xml"
-      displayName: 'Run E2E Tests'
+    - pwsh: |
+        dotnet test tests/E2E.Tests/E2E.Tests.csproj `
+          --configuration $(buildConfiguration) `
+          --no-build `
+          --settings tests/E2E.Tests/.runsettings `
+          --logger "trx;LogFileName=playwright_results.trx"
+      displayName: 'Run Playwright E2E Tests'
+      workingDirectory: '$(Build.SourcesDirectory)'
+      continueOnError: true
+      env:
+        PLAYWRIGHT_BROWSERS_PATH: '0'
 
     - task: PublishTestResults@2
       condition: always()
       inputs:
         testResultsFormat: 'VSTest'
-        testResultsFiles: '**/test_results.xml'
+        testResultsFiles: '**/playwright_results.trx'
         failTaskOnFailedTests: true
-      displayName: 'Publish E2E Test Results'
+      displayName: 'Publish Playwright Test Results'
+
+    - task: PublishBuildArtifacts@1
+      condition: succeededOrFailed()
+      inputs:
+        PathtoPublish: '$(Build.SourcesDirectory)/tests/E2E.Tests'
+        ArtifactName: 'playwright-traces'
+        publishLocation: 'Container'
+      displayName: 'Publish Playwright Traces & Screenshots'
 
   - job: Cypress_Test_Job
     displayName: 'Run Cypress E2E Tests'
@@ -104,9 +120,9 @@ stages:
         Write-Host "Starting Services..."
         $env:ASPNETCORE_ENVIRONMENT = "Development"
         
-        Start-Process dotnet -ArgumentList "run --project src/InventoryService.Api/InventoryService.Api.csproj" -NoNewWindow
-        Start-Process dotnet -ArgumentList "run --project src/OrderService.Api/OrderService.Api.csproj" -NoNewWindow
-        Start-Process dotnet -ArgumentList "run --project src/OrderWeb.Mvc/OrderWeb.Mvc.csproj" -NoNewWindow
+        Start-Process dotnet -ArgumentList "run --project src/InventoryService.Api/InventoryService.Api.csproj --urls=http://127.0.0.1:5001" -NoNewWindow
+        Start-Process dotnet -ArgumentList "run --project src/OrderService.Api/OrderService.Api.csproj --urls=http://127.0.0.1:5000" -NoNewWindow
+        Start-Process dotnet -ArgumentList "run --project src/OrderWeb.Mvc/OrderWeb.Mvc.csproj --urls=http://127.0.0.1:5002" -NoNewWindow
         
         Write-Host "Waiting for services to initialize..."
         Start-Sleep -Seconds 15
@@ -117,7 +133,7 @@ stages:
         npx cypress run --browser chrome
       displayName: 'Run Cypress Tests'
       env:
-        CYPRESS_baseUrl: 'http://localhost:5002'
+        CYPRESS_baseUrl: 'http://127.0.0.1:5002'
 
     - task: PublishTestResults@2
       condition: always()
@@ -153,9 +169,9 @@ stages:
         Write-Host "Starting Services..."
         $env:ASPNETCORE_ENVIRONMENT = "Development"
         
-        Start-Process dotnet -ArgumentList "run --project src/InventoryService.Api/InventoryService.Api.csproj" -NoNewWindow -PassThru | Out-Null
-        Start-Process dotnet -ArgumentList "run --project src/OrderService.Api/OrderService.Api.csproj" -NoNewWindow -PassThru | Out-Null
-        Start-Process dotnet -ArgumentList "run --project src/OrderWeb.Mvc/OrderWeb.Mvc.csproj" -NoNewWindow -PassThru | Out-Null
+        Start-Process dotnet -ArgumentList "run --project src/InventoryService.Api/InventoryService.Api.csproj --urls=http://127.0.0.1:5001" -NoNewWindow -PassThru | Out-Null
+        Start-Process dotnet -ArgumentList "run --project src/OrderService.Api/OrderService.Api.csproj --urls=http://127.0.0.1:5000" -NoNewWindow -PassThru | Out-Null
+        Start-Process dotnet -ArgumentList "run --project src/OrderWeb.Mvc/OrderWeb.Mvc.csproj --urls=http://127.0.0.1:5002" -NoNewWindow -PassThru | Out-Null
         
         Write-Host "Waiting for services to initialize..."
         $maxAttempts = 30
@@ -171,17 +187,17 @@ stages:
           $webReady = $false
           
           try {
-            $response = Invoke-WebRequest -Uri "http://localhost:5001/api/inventory/health" -TimeoutSec 2 -UseBasicParsing -ErrorAction SilentlyContinue
+            $response = Invoke-WebRequest -Uri "http://127.0.0.1:5001/api/inventory/health" -TimeoutSec 2 -UseBasicParsing -ErrorAction SilentlyContinue
             if ($response.StatusCode -eq 200) { $inventoryReady = $true }
           } catch { }
           
           try {
-            $response = Invoke-WebRequest -Uri "http://localhost:5000/swagger/index.html" -TimeoutSec 2 -UseBasicParsing -ErrorAction SilentlyContinue
+            $response = Invoke-WebRequest -Uri "http://127.0.0.1:5000/swagger/index.html" -TimeoutSec 2 -UseBasicParsing -ErrorAction SilentlyContinue
             if ($response.StatusCode -eq 200) { $orderReady = $true }
           } catch { }
           
           try {
-            $response = Invoke-WebRequest -Uri "http://localhost:5002" -TimeoutSec 2 -UseBasicParsing -ErrorAction SilentlyContinue
+            $response = Invoke-WebRequest -Uri "http://127.0.0.1:5002" -TimeoutSec 2 -UseBasicParsing -ErrorAction SilentlyContinue
             if ($response.StatusCode -eq 200) { $webReady = $true }
           } catch { }
           
