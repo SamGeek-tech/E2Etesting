@@ -76,23 +76,74 @@ stages:
         Write-Host "Starting Microservices (detached)..."
         $env:ASPNETCORE_ENVIRONMENT = "Development"
 
-        # Clean ports first
-        netstat -ano | findstr :5000 | for /f "tokens=5" %a in ('more') do taskkill /PID %a /F 2>$null
-        netstat -ano | findstr :5001 | for /f "tokens=5" %a in ('more') do taskkill /PID %a /F 2>$null
-        netstat -ano | findstr :5002 | for /f "tokens=5" %a in ('more') do taskkill /PID %a /F 2>$null
+        # Start Inventory Service
+        $invProc = Start-Process -FilePath "dotnet" -ArgumentList @(
+          "run",
+          "--project", "src/InventoryService.Api/InventoryService.Api.csproj",
+          "--configuration", "$(buildConfiguration)",
+          "--no-build",
+          "--urls=http://127.0.0.1:5001"
+        ) -PassThru -RedirectStandardOutput "$(Build.SourcesDirectory)/inventory.log" -RedirectStandardError "$(Build.SourcesDirectory)/inventory_err.log"
+        Write-Host "Started Inventory Service (PID: $($invProc.Id))"
 
-        # Run with --no-build since we just built it. This prevents race conditions.
-        $invArgs = "run --project src/InventoryService.Api/InventoryService.Api.csproj --configuration $(buildConfiguration) --no-build --urls=http://127.0.0.1:5001"
-        Start-Process dotnet -ArgumentList $invArgs -RedirectStandardOutput "$(Build.SourcesDirectory)/inventory.log" -RedirectStandardError "$(Build.SourcesDirectory)/inventory_err.log"
+        # Start Order Service
+        $ordProc = Start-Process -FilePath "dotnet" -ArgumentList @(
+          "run",
+          "--project", "src/OrderService.Api/OrderService.Api.csproj",
+          "--configuration", "$(buildConfiguration)",
+          "--no-build",
+          "--urls=http://127.0.0.1:5000"
+        ) -PassThru -RedirectStandardOutput "$(Build.SourcesDirectory)/order.log" -RedirectStandardError "$(Build.SourcesDirectory)/order_err.log"
+        Write-Host "Started Order Service (PID: $($ordProc.Id))"
 
-        $ordArgs = "run --project src/OrderService.Api/OrderService.Api.csproj --configuration $(buildConfiguration) --no-build --urls=http://127.0.0.1:5000"
-        Start-Process dotnet -ArgumentList $ordArgs -RedirectStandardOutput "$(Build.SourcesDirectory)/order.log" -RedirectStandardError "$(Build.SourcesDirectory)/order_err.log"
-
-        $webArgs = "run --project src/OrderWeb.Mvc/OrderWeb.Mvc.csproj --configuration $(buildConfiguration) --no-build --urls=http://127.0.0.1:5002"
-        Start-Process dotnet -ArgumentList $webArgs -RedirectStandardOutput "$(Build.SourcesDirectory)/web.log" -RedirectStandardError "$(Build.SourcesDirectory)/web_err.log"
+        # Start Web MVC
+        $webProc = Start-Process -FilePath "dotnet" -ArgumentList @(
+          "run",
+          "--project", "src/OrderWeb.Mvc/OrderWeb.Mvc.csproj",
+          "--configuration", "$(buildConfiguration)",
+          "--no-build",
+          "--urls=http://127.0.0.1:5002"
+        ) -PassThru -RedirectStandardOutput "$(Build.SourcesDirectory)/web.log" -RedirectStandardError "$(Build.SourcesDirectory)/web_err.log"
+        Write-Host "Started Web MVC (PID: $($webProc.Id))"
 
         Write-Host "Waiting 60 seconds for services to start..."
         Start-Sleep -Seconds 60
+
+        # Verify services are running
+        Write-Host "Checking if services are responding..."
+        $allGood = $true
+        try {
+          $r = Invoke-WebRequest -Uri "http://127.0.0.1:5002" -TimeoutSec 5 -UseBasicParsing
+          Write-Host "Web (5002): OK - Status $($r.StatusCode)"
+        } catch {
+          Write-Warning "Web (5002): FAILED - $_"
+          $allGood = $false
+        }
+        try {
+          $r = Invoke-WebRequest -Uri "http://127.0.0.1:5001/api/inventory" -TimeoutSec 5 -UseBasicParsing
+          Write-Host "Inventory (5001): OK - Status $($r.StatusCode)"
+        } catch {
+          Write-Warning "Inventory (5001): FAILED - $_"
+          $allGood = $false
+        }
+        try {
+          $r = Invoke-WebRequest -Uri "http://127.0.0.1:5000/swagger/index.html" -TimeoutSec 5 -UseBasicParsing
+          Write-Host "Order (5000): OK - Status $($r.StatusCode)"
+        } catch {
+          Write-Warning "Order (5000): FAILED - $_"
+          $allGood = $false
+        }
+
+        if (-not $allGood) {
+          Write-Host "=== DUMPING LOGS ===" -ForegroundColor Red
+          Write-Host "--- inventory_err.log ---"
+          Get-Content "$(Build.SourcesDirectory)/inventory_err.log" -ErrorAction SilentlyContinue
+          Write-Host "--- order_err.log ---"
+          Get-Content "$(Build.SourcesDirectory)/order_err.log" -ErrorAction SilentlyContinue
+          Write-Host "--- web_err.log ---"
+          Get-Content "$(Build.SourcesDirectory)/web_err.log" -ErrorAction SilentlyContinue
+          exit 1
+        }
       displayName: 'Start Microservices (Playwright)'
 
     - pwsh: |
@@ -143,20 +194,44 @@ stages:
         Write-Host "Starting Microservices for Cypress..."
         $env:ASPNETCORE_ENVIRONMENT = "Development"
 
-        netstat -ano | findstr :5000 | for /f "tokens=5" %a in ('more') do taskkill /PID %a /F 2>$null
-        netstat -ano | findstr :5001 | for /f "tokens=5" %a in ('more') do taskkill /PID %a /F 2>$null
-        netstat -ano | findstr :5002 | for /f "tokens=5" %a in ('more') do taskkill /PID %a /F 2>$null
+        # Start Inventory Service
+        $invProc = Start-Process -FilePath "dotnet" -ArgumentList @(
+          "run",
+          "--project", "src/InventoryService.Api/InventoryService.Api.csproj",
+          "--configuration", "$(buildConfiguration)",
+          "--no-build",
+          "--urls=http://127.0.0.1:5001"
+        ) -PassThru -RedirectStandardOutput "$(Build.SourcesDirectory)/inventory.log" -RedirectStandardError "$(Build.SourcesDirectory)/inventory_err.log"
+        Write-Host "Started Inventory Service (PID: $($invProc.Id))"
 
-        $invArgs = "run --project src/InventoryService.Api/InventoryService.Api.csproj --configuration $(buildConfiguration) --no-build --urls=http://127.0.0.1:5001"
-        Start-Process dotnet -ArgumentList $invArgs -RedirectStandardOutput "$(Build.SourcesDirectory)/inventory.log" -RedirectStandardError "$(Build.SourcesDirectory)/inventory_err.log"
+        # Start Order Service
+        $ordProc = Start-Process -FilePath "dotnet" -ArgumentList @(
+          "run",
+          "--project", "src/OrderService.Api/OrderService.Api.csproj",
+          "--configuration", "$(buildConfiguration)",
+          "--no-build",
+          "--urls=http://127.0.0.1:5000"
+        ) -PassThru -RedirectStandardOutput "$(Build.SourcesDirectory)/order.log" -RedirectStandardError "$(Build.SourcesDirectory)/order_err.log"
+        Write-Host "Started Order Service (PID: $($ordProc.Id))"
 
-        $ordArgs = "run --project src/OrderService.Api/OrderService.Api.csproj --configuration $(buildConfiguration) --no-build --urls=http://127.0.0.1:5000"
-        Start-Process dotnet -ArgumentList $ordArgs -RedirectStandardOutput "$(Build.SourcesDirectory)/order.log" -RedirectStandardError "$(Build.SourcesDirectory)/order_err.log"
+        # Start Web MVC
+        $webProc = Start-Process -FilePath "dotnet" -ArgumentList @(
+          "run",
+          "--project", "src/OrderWeb.Mvc/OrderWeb.Mvc.csproj",
+          "--configuration", "$(buildConfiguration)",
+          "--no-build",
+          "--urls=http://127.0.0.1:5002"
+        ) -PassThru -RedirectStandardOutput "$(Build.SourcesDirectory)/web.log" -RedirectStandardError "$(Build.SourcesDirectory)/web_err.log"
+        Write-Host "Started Web MVC (PID: $($webProc.Id))"
 
-        $webArgs = "run --project src/OrderWeb.Mvc/OrderWeb.Mvc.csproj --configuration $(buildConfiguration) --no-build --urls=http://127.0.0.1:5002"
-        Start-Process dotnet -ArgumentList $webArgs -RedirectStandardOutput "$(Build.SourcesDirectory)/web.log" -RedirectStandardError "$(Build.SourcesDirectory)/web_err.log"
-
+        Write-Host "Waiting 60 seconds for services to start..."
         Start-Sleep -Seconds 60
+
+        # Verify services are running
+        Write-Host "Checking if services are responding..."
+        try { Invoke-WebRequest -Uri "http://127.0.0.1:5002" -TimeoutSec 5 -UseBasicParsing | Out-Null; Write-Host "Web (5002): OK" } catch { Write-Warning "Web (5002): FAILED" }
+        try { Invoke-WebRequest -Uri "http://127.0.0.1:5001/api/inventory" -TimeoutSec 5 -UseBasicParsing | Out-Null; Write-Host "Inventory (5001): OK" } catch { Write-Warning "Inventory (5001): FAILED" }
+        try { Invoke-WebRequest -Uri "http://127.0.0.1:5000/swagger/index.html" -TimeoutSec 5 -UseBasicParsing | Out-Null; Write-Host "Order (5000): OK" } catch { Write-Warning "Order (5000): FAILED" }
       displayName: 'Start Microservices (Cypress)'
 
     - script: |
@@ -194,35 +269,75 @@ stages:
       displayName: 'Build Solution (Prepare for Selenium)'
 
     - pwsh: |
-        Write-Host "Starting Microservices for Selenium (robust startup)..."
+        Write-Host "Starting Microservices for Selenium..."
         $env:ASPNETCORE_ENVIRONMENT = "Development"
 
-        # Force kill any lingering processes on our ports
-        netstat -ano | findstr :5000 | for /f "tokens=5" %a in ('more') do taskkill /PID %a /F 2>$null
-        netstat -ano | findstr :5001 | for /f "tokens=5" %a in ('more') do taskkill /PID %a /F 2>$null
-        netstat -ano | findstr :5002 | for /f "tokens=5" %a in ('more') do taskkill /PID %a /F 2>$null
+        # Start Inventory Service
+        $invProc = Start-Process -FilePath "dotnet" -ArgumentList @(
+          "run",
+          "--project", "src/InventoryService.Api/InventoryService.Api.csproj",
+          "--configuration", "$(buildConfiguration)",
+          "--no-build",
+          "--urls=http://127.0.0.1:5001"
+        ) -PassThru -RedirectStandardOutput "$(Build.SourcesDirectory)/inventory.log" -RedirectStandardError "$(Build.SourcesDirectory)/inventory_err.log"
+        Write-Host "Started Inventory Service (PID: $($invProc.Id))"
 
-        # Start services detached with full logging
-        $invArgs = "run --project src/InventoryService.Api/InventoryService.Api.csproj --configuration $(buildConfiguration) --no-build --urls=http://127.0.0.1:5001"
-        Start-Process dotnet -ArgumentList $invArgs -RedirectStandardOutput "$(Build.SourcesDirectory)/inventory.log" -RedirectStandardError "$(Build.SourcesDirectory)/inventory_err.log"
+        # Start Order Service
+        $ordProc = Start-Process -FilePath "dotnet" -ArgumentList @(
+          "run",
+          "--project", "src/OrderService.Api/OrderService.Api.csproj",
+          "--configuration", "$(buildConfiguration)",
+          "--no-build",
+          "--urls=http://127.0.0.1:5000"
+        ) -PassThru -RedirectStandardOutput "$(Build.SourcesDirectory)/order.log" -RedirectStandardError "$(Build.SourcesDirectory)/order_err.log"
+        Write-Host "Started Order Service (PID: $($ordProc.Id))"
 
-        $ordArgs = "run --project src/OrderService.Api/OrderService.Api.csproj --configuration $(buildConfiguration) --no-build --urls=http://127.0.0.1:5000"
-        Start-Process dotnet -ArgumentList $ordArgs -RedirectStandardOutput "$(Build.SourcesDirectory)/order.log" -RedirectStandardError "$(Build.SourcesDirectory)/order_err.log"
+        # Start Web MVC
+        $webProc = Start-Process -FilePath "dotnet" -ArgumentList @(
+          "run",
+          "--project", "src/OrderWeb.Mvc/OrderWeb.Mvc.csproj",
+          "--configuration", "$(buildConfiguration)",
+          "--no-build",
+          "--urls=http://127.0.0.1:5002"
+        ) -PassThru -RedirectStandardOutput "$(Build.SourcesDirectory)/web.log" -RedirectStandardError "$(Build.SourcesDirectory)/web_err.log"
+        Write-Host "Started Web MVC (PID: $($webProc.Id))"
 
-        $webArgs = "run --project src/OrderWeb.Mvc/OrderWeb.Mvc.csproj --configuration $(buildConfiguration) --no-build --urls=http://127.0.0.1:5002"
-        Start-Process dotnet -ArgumentList $webArgs -RedirectStandardOutput "$(Build.SourcesDirectory)/web.log" -RedirectStandardError "$(Build.SourcesDirectory)/web_err.log"
-
-        Write-Host "Waiting 60 seconds for services to fully start..."
+        Write-Host "Waiting 60 seconds for services to start..."
         Start-Sleep -Seconds 60
-      displayName: 'Start Microservices (Selenium)'
-    - pwsh: |
+
+        # Verify services are running
+        Write-Host "Checking if services are responding..."
         $allGood = $true
-        try { Invoke-WebRequest http://127.0.0.1:5002 -TimeoutSec 10 | Out-Null; Write-Host "Web app (5002) OK" } catch { Write-Warning "Web app FAILED: $_"; $allGood = $false }
-        try { Invoke-WebRequest http://127.0.0.1:5000/swagger/index.html -TimeoutSec 10 | Out-Null; Write-Host "Order API (5000) OK" } catch { Write-Warning "Order API FAILED: $_"; $allGood = $false }
-        try { Invoke-WebRequest http://127.0.0.1:5001/api/inventory/health -TimeoutSec 10 | Out-Null; Write-Host "Inventory API (5001) OK" } catch { Write-Warning "Inventory API FAILED: $_"; $allGood = $false }
+        try {
+          Invoke-WebRequest -Uri "http://127.0.0.1:5002" -TimeoutSec 10 -UseBasicParsing | Out-Null
+          Write-Host "Web (5002): OK"
+        } catch {
+          Write-Warning "Web (5002): FAILED - $_"
+          $allGood = $false
+        }
+        try {
+          Invoke-WebRequest -Uri "http://127.0.0.1:5001/api/inventory" -TimeoutSec 10 -UseBasicParsing | Out-Null
+          Write-Host "Inventory (5001): OK"
+        } catch {
+          Write-Warning "Inventory (5001): FAILED - $_"
+          $allGood = $false
+        }
+        try {
+          Invoke-WebRequest -Uri "http://127.0.0.1:5000/swagger/index.html" -TimeoutSec 10 -UseBasicParsing | Out-Null
+          Write-Host "Order (5000): OK"
+        } catch {
+          Write-Warning "Order (5000): FAILED - $_"
+          $allGood = $false
+        }
 
         if (-not $allGood) {
-          Write-Error "Services failed to start properly!"
+          Write-Host "=== DUMPING LOGS ===" -ForegroundColor Red
+          Write-Host "--- inventory_err.log ---"
+          Get-Content "$(Build.SourcesDirectory)/inventory_err.log" -ErrorAction SilentlyContinue
+          Write-Host "--- order_err.log ---"
+          Get-Content "$(Build.SourcesDirectory)/order_err.log" -ErrorAction SilentlyContinue
+          Write-Host "--- web_err.log ---"
+          Get-Content "$(Build.SourcesDirectory)/web_err.log" -ErrorAction SilentlyContinue
           exit 1
         }
       displayName: 'Start Microservices (Selenium)'
