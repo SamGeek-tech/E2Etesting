@@ -446,6 +446,24 @@ stages:
         failTaskOnFailedTests: true
       displayName: '📊 Publish Playwright Node.js Test Results'
 
+    - pwsh: |
+        $reportPath = "tests/PlaywrightNode.Tests/playwright-report"
+        $resultsPath = "tests/PlaywrightNode.Tests/test-results"
+        
+        if (-not (Test-Path $reportPath)) {
+          Write-Host "⚠️ Report directory not found, creating placeholder"
+          New-Item -ItemType Directory -Path $reportPath -Force | Out-Null
+          "No report generated" | Out-File "$reportPath/README.txt"
+        }
+        
+        if (-not (Test-Path $resultsPath)) {
+          Write-Host "⚠️ Results directory not found, creating placeholder"
+          New-Item -ItemType Directory -Path $resultsPath -Force | Out-Null
+          "No results generated" | Out-File "$resultsPath/README.txt"
+        }
+      displayName: '📁 Prepare Playwright Node.js Artifacts'
+      condition: always()
+
     - task: PublishBuildArtifacts@1
       condition: always()
       inputs:
@@ -614,12 +632,41 @@ stages:
         failTaskOnFailedTests: true
       displayName: '📊 Publish Cypress Test Results'
 
+    - pwsh: |
+        $videosPath = "tests/Cypress.Tests/cypress/videos"
+        $screenshotsPath = "tests/Cypress.Tests/cypress/screenshots"
+        
+        if (Test-Path $videosPath) {
+          Write-Host "✅ Videos directory exists, will be published"
+        } else {
+          Write-Host "⚠️ Videos directory not found, creating empty placeholder"
+          New-Item -ItemType Directory -Path $videosPath -Force | Out-Null
+          "No videos recorded" | Out-File "$videosPath/README.txt"
+        }
+        
+        if (Test-Path $screenshotsPath) {
+          Write-Host "✅ Screenshots directory exists"
+        } else {
+          Write-Host "⚠️ Screenshots directory not found, creating empty placeholder"
+          New-Item -ItemType Directory -Path $screenshotsPath -Force | Out-Null
+          "No screenshots recorded" | Out-File "$screenshotsPath/README.txt"
+        }
+      displayName: '📁 Prepare Cypress Artifacts'
+      condition: always()
+
     - task: PublishBuildArtifacts@1
       condition: always()
       inputs:
         PathtoPublish: 'tests/Cypress.Tests/cypress/videos'
         ArtifactName: 'cypress-videos'
       displayName: '📁 Publish Cypress Videos'
+
+    - task: PublishBuildArtifacts@1
+      condition: always()
+      inputs:
+        PathtoPublish: 'tests/Cypress.Tests/cypress/screenshots'
+        ArtifactName: 'cypress-screenshots'
+      displayName: '📁 Publish Cypress Screenshots'
 
   # ==================== SELENIUM E2E ====================
   - job: Selenium_Test_Job

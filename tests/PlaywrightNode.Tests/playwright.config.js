@@ -11,9 +11,9 @@ module.exports = defineConfig({
         : 'html',
     use: {
         baseURL: 'http://127.0.0.1:5002',
-        trace: 'on-first-retry',
-        screenshot: 'only-on-failure',
-        video: 'on-first-retry',
+        trace: 'on',
+        screenshot: 'on',
+        video: 'on',
         headless: !!process.env.CI,
     },
     projects: [
