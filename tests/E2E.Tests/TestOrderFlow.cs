@@ -8,7 +8,7 @@ namespace E2E.Tests;
 [TestFixture]
 public class TestOrderFlow : PageTest
 {
-    private string _baseUrl = "http://localhost:5002"; // MVC App Port
+    private string _baseUrl = "http://127.0.0.1:5002"; // MVC App Port
 
     [Test]
     public async Task FullUserJourney_PlaceOrder_VerifyHistory()
@@ -25,21 +25,21 @@ public class TestOrderFlow : PageTest
         // Assert: Redirect to Home
         await Expect(Page).ToHaveURLAsync($"{_baseUrl}/");
 
-        // 3. Act: Browse and Order Laptop
+        // 3. Act: Browse and Order Mouse
         await shopPage.GotoAsync(_baseUrl);
-        int initialStock = await shopPage.GetStockCountAsync("Laptop");
-        await shopPage.PlaceOrderAsync("Laptop");
+        int initialStock = await shopPage.GetStockCountAsync("Mouse");
+        await shopPage.PlaceOrderAsync("Mouse");
 
         // Assert: Redirect to Orders
         await Expect(Page).ToHaveURLAsync($"{_baseUrl}/Orders");
 
         // 4. Assert: Order exists in history
-        bool isOrderVisible = await ordersPage.IsOrderVisibleAsync("Laptop");
+        bool isOrderVisible = await ordersPage.IsOrderVisibleAsync("Mouse");
         Assert.That(isOrderVisible, Is.True, "Order should be visible in history");
 
         // 5. Assert: Stock depleted (Verification after reload or by revisiting shop)
         await shopPage.GotoAsync(_baseUrl);
-        int finalStock = await shopPage.GetStockCountAsync("Laptop");
+        int finalStock = await shopPage.GetStockCountAsync("Mouse");
         Assert.That(finalStock, Is.EqualTo(initialStock - 1), "Stock should be decremented");
     }
 

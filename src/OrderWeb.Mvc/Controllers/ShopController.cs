@@ -19,7 +19,7 @@ public class ShopController : Controller
 
     public async Task<IActionResult> Index()
     {
-        var inventoryUrl = _config["Services:InventoryUrl"] ?? "http://localhost:5001";
+        var inventoryUrl = _config["Services:InventoryUrl"] ?? "http://127.0.0.1:5001";
         var products = await _httpClient.GetFromJsonAsync<List<ProductViewModel>>($"{inventoryUrl}/api/inventory");
         return View(products);
     }
@@ -28,7 +28,7 @@ public class ShopController : Controller
     public async Task<IActionResult> Order(int productId, string productName, decimal price, int quantity)
     {
         var token = User.FindFirstValue("Token");
-        var orderServiceUrl = _config["Services:OrderServiceUrl"] ?? "http://localhost:5000";
+        var orderServiceUrl = _config["Services:OrderServiceUrl"] ?? "http://127.0.0.1:5000";
 
         _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
 

@@ -5,18 +5,65 @@ using Microsoft.Playwright;
 
 namespace E2E.Tests;
 
+[SetUpFixture]
+public class GlobalSetup
+{
+    [OneTimeSetUp]
+    public async Task InstallBrowsers()
+    {
+        // This installs browsers into the global ms-playwright cache (where NUnit looks)
+        var exitCode = Program.Main(new[] { "install", "chromium" });
+        if (exitCode != 0)
+        {
+            throw new Exception($"Playwright install failed with exit code {exitCode}");
+        }
+    }
+}
+
 [Parallelizable(ParallelScope.Self)]
 [TestFixture]
 public class ExtendedScenarios : PageTest
 {
-    private string _baseUrl = "http://localhost:5002";
+    private string _baseUrl = "http://127.0.0.1:5002";
 
     [SetUp]
     public async Task Setup()
     {
+        // Start tracing for ALL tests
+        await Context.Tracing.StartAsync(new TracingStartOptions
+        {
+            Screenshots = true,
+            Snapshots = true,
+            Sources = true,
+            Title = "PPlayWrightTestName"
+        });
+
         var loginPage = new LoginPage(Page);
         await loginPage.GotoAsync(_baseUrl);
         await loginPage.LoginAsync("test@example.com", "Password123!");
+    }
+
+    [TearDown]
+    public async Task GlobalTeardown()
+    {
+        if (TestContext.CurrentContext.Result.Outcome.Status == NUnit.Framework.Interfaces.TestStatus.Failed)
+        {
+            // Save trace only on failure
+            var tracePath = Path.Combine(TestContext.CurrentContext.WorkDirectory,
+                $"trace-{TestContext.CurrentContext.Test.Name}.zip");
+            await Context.Tracing.StopAsync(new TracingStopOptions
+            {
+                Path = tracePath
+            });
+
+            // Also take a screenshot on failure
+            var screenshotPath = Path.Combine(TestContext.CurrentContext.WorkDirectory,
+                $"screenshot-{TestContext.CurrentContext.Test.Name}.png");
+            await Page.ScreenshotAsync(new PageScreenshotOptions { Path = screenshotPath });
+
+            Console.WriteLine($"Trace saved to: {tracePath}");
+            Console.WriteLine($"Screenshot saved to: {screenshotPath}");
+        }
     }
 
     [Test]

@@ -9,7 +9,7 @@ namespace Selenium.Tests;
 public class OrderFlowTests
 {
     private IWebDriver _driver;
-    private string _baseUrl = "http://localhost:5002";
+    private string _baseUrl = "http://127.0.0.1:5002";
     private LoginPage _loginPage;
     private ShopPage _shopPage;
     private OrdersPage _ordersPage;
@@ -74,14 +74,14 @@ public class OrderFlowTests
         _loginPage.Login(_testEmail, _testPassword);
 
         _shopPage.Visit(_baseUrl);
-        int initialStock = _shopPage.GetStockCount("Laptop");
-        _shopPage.PlaceOrder("Laptop");
+        int initialStock = _shopPage.GetStockCount("Mouse");
+        _shopPage.PlaceOrder("Mouse");
 
         Assert.That(_driver.Url, Does.Contain("/Orders"));
-        Assert.That(_ordersPage.IsOrderVisible("Laptop"), Is.True);
+        Assert.That(_ordersPage.IsOrderVisible("Mouse"), Is.True);
 
         _shopPage.Visit(_baseUrl);
-        int finalStock = _shopPage.GetStockCount("Laptop");
+        int finalStock = _shopPage.GetStockCount("Mouse");
         Assert.That(finalStock, Is.EqualTo(initialStock - 1));
     }
 
@@ -90,16 +90,20 @@ public class OrderFlowTests
     {
         _loginPage.Visit(_baseUrl);
         _loginPage.Login(_testEmail, _testPassword);
-
-        _shopPage.Visit(_baseUrl);
+        Thread.Sleep(500);
         const string productName = "Mouse";
-        const int quantity = 3;
+        const int quantity = 2;
+        _shopPage.Visit(_baseUrl);
 
         _shopPage.SetQuantity(productName, quantity);
         _shopPage.PlaceOrder(productName);
+        Thread.Sleep(500);
 
         Assert.That(_driver.Url, Does.Contain("/Orders"));
+
         var orderItemText = _driver.FindElement(By.CssSelector(".order-item")).Text;
+        Thread.Sleep(500);
+
         Assert.That(orderItemText, Does.Contain($"{productName} x {quantity}"));
     }
 

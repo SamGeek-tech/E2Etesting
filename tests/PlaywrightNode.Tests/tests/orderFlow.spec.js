@@ -10,7 +10,7 @@ test.describe('Order Flow Journey (Playwright Node.js Comparison)', () => {
     };
 
     // Explicitly using baseURL to demonstrate setup, though config handles relative paths automatically
-    test.use({ baseURL: 'http://localhost:5002' });
+    test.use({ baseURL: 'http://127.0.0.1:5002' });
 
     test('Scenario 1: Successful Authentication', async ({ page }) => {
         const loginPage = new LoginPage(page);
