@@ -80,9 +80,11 @@ public class OrderFlowTests
         _loginPage.Login(_testEmail, _testPassword);
 
         _shopPage.Visit(_baseUrl);
+        Thread.Sleep(500);
         int initialStock = _shopPage.GetStockCount("Mouse");
+        Thread.Sleep(500);
         _shopPage.PlaceOrder("Mouse");
-
+        Thread.Sleep(500);
         Assert.That(_driver.Url, Does.Contain("/Orders"));
         Assert.That(_ordersPage.IsOrderVisible("Mouse"), Is.True);
 
@@ -141,10 +143,12 @@ public class OrderFlowTests
         // Assuming we could register a new user or use one with no orders
         // For this demo, let's just check if the message exists if no orders are visible
         _loginPage.Login(_testEmail, _testPassword); 
-        
+        Thread.Sleep(500);
         _ordersPage.Visit(_baseUrl);
+        Thread.Sleep(500);
         try {
             var orders = _driver.FindElements(By.CssSelector(".order-item"));
+            Thread.Sleep(500);
             if (orders.Count == 0)
             {
                 Assert.That(_ordersPage.GetEmptyMessage(), Does.Contain("You haven't placed any orders yet."));
@@ -188,12 +192,16 @@ public class OrderFlowTests
     {
         _loginPage.Visit(_baseUrl);
         _loginPage.Login(_testEmail, _testPassword);
-
+        Thread.Sleep(500);
         _shopPage.Visit(_baseUrl);
+        Thread.Sleep(500);
         int initial = _shopPage.GetStockCount("Mouse");
+        Thread.Sleep(500);
         _shopPage.PlaceOrder("Mouse");
+        Thread.Sleep(500);
 
         _shopPage.Visit(_baseUrl);
+        Thread.Sleep(500);
         int final = _shopPage.GetStockCount("Mouse");
         Assert.That(final, Is.EqualTo(initial - 1));
     }
@@ -214,8 +222,9 @@ public class OrderFlowTests
         _loginPage.Visit(_baseUrl);
         _loginPage.Login(_testEmail, _testPassword);
         _ordersPage.Visit(_baseUrl);
+        Thread.Sleep(500);
         int finalCount = _driver.FindElements(By.CssSelector(".order-item")).Count;
-
+        Thread.Sleep(500);
         Assert.That(finalCount, Is.EqualTo(initialCount));
     }
 }
