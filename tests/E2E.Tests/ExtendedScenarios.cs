@@ -5,6 +5,21 @@ using Microsoft.Playwright;
 
 namespace E2E.Tests;
 
+[SetUpFixture]
+public class GlobalSetup
+{
+    [OneTimeSetUp]
+    public async Task InstallBrowsers()
+    {
+        // This installs browsers into the global ms-playwright cache (where NUnit looks)
+        var exitCode = Program.Main(new[] { "install", "chromium" });
+        if (exitCode != 0)
+        {
+            throw new Exception($"Playwright install failed with exit code {exitCode}");
+        }
+    }
+}
+
 [Parallelizable(ParallelScope.Self)]
 [TestFixture]
 public class ExtendedScenarios : PageTest

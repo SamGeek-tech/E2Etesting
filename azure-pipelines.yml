@@ -108,7 +108,6 @@ stages:
       workingDirectory: '$(Build.SourcesDirectory)'
       continueOnError: true
       env:
-        PLAYWRIGHT_BROWSERS_PATH: '0'   # Forces use of project-local browsers
         DEBUG: 'pw:*'                   # Optional: verbose logs for debugging
 
     - task: PublishTestResults@2
