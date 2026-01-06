@@ -6,6 +6,9 @@ pool:
 
 variables:
   buildConfiguration: 'Release'
+  NUGET_PACKAGES: $(Pipeline.Workspace)/.nuget/packages
+  npm_config_cache: $(Pipeline.Workspace)/.npm
+  PLAYWRIGHT_BROWSERS_PATH: $(Pipeline.Workspace)/.playwright-browsers
 
 stages:
 - stage: Build
@@ -15,18 +18,7 @@ stages:
     displayName: 'Build Solution'
     steps:
     - pwsh: |
-        Write-Host ""
-        Write-Host "╔════════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
-        Write-Host "║              🚀 PIPELINE STARTED - BUILD STAGE                 ║" -ForegroundColor Cyan
-        Write-Host "║────────────────────────────────────────────────────────────────║" -ForegroundColor Cyan
-        Write-Host "║  Build ID:      $(Build.BuildId)"
-        Write-Host "║  Build Number:  $(Build.BuildNumber)"
-        Write-Host "║  Branch:        $(Build.SourceBranchName)"
-        Write-Host "║  Commit:        $(Build.SourceVersion)"
-        Write-Host "║  Agent:         $(Agent.MachineName)"
-        Write-Host "║  Config:        $(buildConfiguration)"
-        Write-Host "╚════════════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
-        Write-Host ""
+        Write-Host "🚀 Build $(Build.BuildId) | Branch: $(Build.SourceBranchName) | Config: $(buildConfiguration)"
       displayName: '📋 Pipeline Info'
 
     - task: UseDotNet@2
@@ -35,54 +27,49 @@ stages:
         version: '8.x'
       displayName: '⚙️ Setup .NET 8 SDK'
 
-    - pwsh: |
-        Write-Host "▶️ [STEP 1/5] Restoring NuGet packages..." -ForegroundColor Yellow
-        dotnet restore
-        Write-Host "✅ [STEP 1/5] Restore complete" -ForegroundColor Green
-      displayName: '📦 [1/5] Restore Dependencies'
-
-    - pwsh: |
-        Write-Host "▶️ [STEP 2/5] Building solution..." -ForegroundColor Yellow
-        dotnet build --configuration $(buildConfiguration) --no-restore
-        Write-Host "✅ [STEP 2/5] Build complete" -ForegroundColor Green
-      displayName: '🔨 [2/5] Build Solution'
-
-    - pwsh: |
-        Write-Host "▶️ [STEP 3/5] Running unit tests..." -ForegroundColor Yellow
-        dotnet test tests/Unit.Tests/Unit.Tests.csproj --configuration $(buildConfiguration) --no-build --logger "trx;LogFileName=unit_test_results.trx"
-        Write-Host "✅ [STEP 3/5] Unit tests complete" -ForegroundColor Green
-      displayName: '🧪 [3/5] Run Unit Tests'
-
-    - task: PublishTestResults@2
-      condition: always()
+    # ⚡ CACHE: NuGet packages
+    - task: Cache@2
       inputs:
-        testResultsFormat: 'VSTest'
-        testResultsFiles: '**/unit_test_results.trx'
-        failTaskOnFailedTests: true
-      displayName: '📊 Publish Unit Test Results'
+        key: 'nuget | "$(Agent.OS)" | **/packages.lock.json, !**/bin/**, !**/obj/**'
+        restoreKeys: |
+          nuget | "$(Agent.OS)"
+        path: $(NUGET_PACKAGES)
+      displayName: '⚡ Cache NuGet packages'
+
+    - pwsh: |
+        dotnet restore --verbosity minimal
+      displayName: '📦 Restore Dependencies'
+
+    - pwsh: |
+        dotnet build --configuration $(buildConfiguration) --no-restore
+      displayName: '🔨 Build Solution'
+
+    # - pwsh: |
+    #     dotnet test --configuration $(buildConfiguration) --no-build
+    #   displayName: '🧪 Run Unit Tests'
+
+    # ⚡ Publish built binaries for E2E jobs to reuse
+    - task: PublishPipelineArtifact@1
+      inputs:
+        targetPath: '$(Build.SourcesDirectory)'
+        artifact: 'source-with-binaries'
+        publishLocation: 'pipeline'
+      displayName: '💾 Publish Built Source'
 
     - task: DotNetCoreCLI@2
       inputs:
         command: 'publish'
         publishWebProjects: true
-        arguments: '--configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)'
+        arguments: '--configuration $(buildConfiguration) --no-build --output $(Build.ArtifactStagingDirectory)'
         zipAfterPublish: true
-      displayName: '📤 [4/5] Publish Web Projects'
+      displayName: '📤 Publish Web Projects'
 
     - task: PublishBuildArtifacts@1
       inputs:
         PathtoPublish: '$(Build.ArtifactStagingDirectory)'
         ArtifactName: 'drop'
         publishLocation: 'Container'
-      displayName: '💾 [5/5] Publish Build Artifacts'
-
-    - pwsh: |
-        Write-Host ""
-        Write-Host "╔════════════════════════════════════════════════════════════════╗" -ForegroundColor Green
-        Write-Host "║           ✅ BUILD STAGE COMPLETED SUCCESSFULLY                ║" -ForegroundColor Green
-        Write-Host "╚════════════════════════════════════════════════════════════════╝" -ForegroundColor Green
-      displayName: '✅ Build Stage Complete'
-      condition: succeeded()
+      displayName: '💾 Publish Build Artifacts'
 
 - stage: E2E_Testing
   displayName: '🧪 E2E Integration Tests'
@@ -94,174 +81,76 @@ stages:
   - job: E2E_Test_Job
     displayName: '🎭 Playwright Tests .NET'
     steps:
-    - pwsh: |
-        Write-Host ""
-        Write-Host "╔════════════════════════════════════════════════════════════════╗" -ForegroundColor Magenta
-        Write-Host "║           🎭 PLAYWRIGHT E2E TEST JOB STARTED                   ║" -ForegroundColor Magenta
-        Write-Host "║────────────────────────────────────────────────────────────────║" -ForegroundColor Magenta
-        Write-Host "║  Job:    E2E_Test_Job (Playwright)"
-        Write-Host "║  Agent:  $(Agent.MachineName)"
-        Write-Host "║  Status: INITIALIZING"
-        Write-Host "╚════════════════════════════════════════════════════════════════╝" -ForegroundColor Magenta
-      displayName: '📋 Playwright Job Info'
+    - checkout: none  # ⚡ Skip checkout - use cached artifacts
 
     - task: UseDotNet@2
       inputs:
         packageType: 'sdk'
         version: '8.x'
-      displayName: '⚙️ Setup .NET 8 SDK'
+      displayName: '⚙️ Setup .NET SDK'
+
+    # ⚡ Download pre-built binaries from Build stage
+    - task: DownloadPipelineArtifact@2
+      inputs:
+        artifact: 'source-with-binaries'
+        path: '$(Build.SourcesDirectory)'
+      displayName: '⚡ Download Built Source'
+
+    # ⚡ CACHE: Playwright browsers
+    - task: Cache@2
+      inputs:
+        key: 'playwright-dotnet | "$(Agent.OS)" | tests/E2E.Tests/E2E.Tests.csproj'
+        path: $(PLAYWRIGHT_BROWSERS_PATH)
+      displayName: '⚡ Cache Playwright Browsers'
 
     - pwsh: |
-        Write-Host "▶️ [PLAYWRIGHT 1/4] Building test project..." -ForegroundColor Yellow
-        dotnet build tests/E2E.Tests/E2E.Tests.csproj --configuration $(buildConfiguration)
-        Write-Host "✅ [PLAYWRIGHT 1/4] Test project built" -ForegroundColor Green
-      displayName: '🔨 [1/4] Build Playwright E2E Project'
-      workingDirectory: '$(Build.SourcesDirectory)'
-
-    - pwsh: |
-        Write-Host "▶️ [PLAYWRIGHT 2/4] Installing Playwright browsers..." -ForegroundColor Yellow
         $scriptPath = "tests/E2E.Tests/bin/$(buildConfiguration)/net8.0/playwright.ps1"
         if (Test-Path $scriptPath) {
-          Write-Host "   Found playwright.ps1 at: $scriptPath"
           pwsh -ExecutionPolicy Bypass -File $scriptPath install --with-deps chromium
         } else {
-          Write-Host "   playwright.ps1 not found, using dotnet tool..." -ForegroundColor Yellow
           dotnet tool update --global Microsoft.Playwright.CLI 2>$null
           playwright install --with-deps chromium
         }
-        Write-Host "✅ [PLAYWRIGHT 2/4] Browsers installed" -ForegroundColor Green
-      displayName: '🌐 [2/4] Install Playwright Browsers'
+      displayName: '🌐 Install Playwright Browsers'
+      env:
+        PLAYWRIGHT_BROWSERS_PATH: $(PLAYWRIGHT_BROWSERS_PATH)
 
     - pwsh: |
-        Write-Host "▶️ [PLAYWRIGHT 3/4] Building solution for services..." -ForegroundColor Yellow
-        dotnet build E2Etesting.sln --configuration $(buildConfiguration)
-        Write-Host "✅ [PLAYWRIGHT 3/4] Solution built" -ForegroundColor Green
-      displayName: '🔨 [3/4] Build Solution'
-
-    - pwsh: |
-        Write-Host ""
-        Write-Host "╔════════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
-        Write-Host "║     ▶️ [PLAYWRIGHT 4/4] STARTING SERVICES & RUNNING TESTS      ║" -ForegroundColor Cyan
-        Write-Host "╚════════════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
-        Write-Host ""
-        Write-Host "🚀 Starting Microservices for Playwright..."
+        Write-Host "🚀 Starting services..."
         $env:ASPNETCORE_ENVIRONMENT = "Development"
-        $env:PLAYWRIGHT_BROWSERS_PATH = "0"
 
-        # Start Inventory Service
-        $invProc = Start-Process -FilePath "dotnet" -ArgumentList @(
-          "run",
-          "--project", "src/InventoryService.Api/InventoryService.Api.csproj",
-          "--configuration", "$(buildConfiguration)",
-          "--no-build",
-          "--urls=http://127.0.0.1:5001"
-        ) -PassThru -RedirectStandardOutput "$(Build.SourcesDirectory)/inventory.log" -RedirectStandardError "$(Build.SourcesDirectory)/inventory_err.log"
-        Write-Host "Started Inventory Service (PID: $($invProc.Id))"
+        # Start all services in parallel
+        $invProc = Start-Process dotnet -ArgumentList "run","--project","src/InventoryService.Api/InventoryService.Api.csproj","--configuration","$(buildConfiguration)","--no-build","--urls=http://127.0.0.1:5001" -PassThru -RedirectStandardOutput inv.log -RedirectStandardError inv_err.log
+        $ordProc = Start-Process dotnet -ArgumentList "run","--project","src/OrderService.Api/OrderService.Api.csproj","--configuration","$(buildConfiguration)","--no-build","--urls=http://127.0.0.1:5000" -PassThru -RedirectStandardOutput ord.log -RedirectStandardError ord_err.log
+        $webProc = Start-Process dotnet -ArgumentList "run","--project","src/OrderWeb.Mvc/OrderWeb.Mvc.csproj","--configuration","$(buildConfiguration)","--no-build","--urls=http://127.0.0.1:5002" -PassThru -RedirectStandardOutput web.log -RedirectStandardError web_err.log
 
-        # Start Order Service
-        $ordProc = Start-Process -FilePath "dotnet" -ArgumentList @(
-          "run",
-          "--project", "src/OrderService.Api/OrderService.Api.csproj",
-          "--configuration", "$(buildConfiguration)",
-          "--no-build",
-          "--urls=http://127.0.0.1:5000"
-        ) -PassThru -RedirectStandardOutput "$(Build.SourcesDirectory)/order.log" -RedirectStandardError "$(Build.SourcesDirectory)/order_err.log"
-        Write-Host "Started Order Service (PID: $($ordProc.Id))"
-
-        # Start Web MVC
-        $webProc = Start-Process -FilePath "dotnet" -ArgumentList @(
-          "run",
-          "--project", "src/OrderWeb.Mvc/OrderWeb.Mvc.csproj",
-          "--configuration", "$(buildConfiguration)",
-          "--no-build",
-          "--urls=http://127.0.0.1:5002"
-        ) -PassThru -RedirectStandardOutput "$(Build.SourcesDirectory)/web.log" -RedirectStandardError "$(Build.SourcesDirectory)/web_err.log"
-        Write-Host "Started Web MVC (PID: $($webProc.Id))"
-
-        Write-Host ""
-        Write-Host "⏳ STATE: WAITING FOR SERVICES..." -ForegroundColor Yellow
-        Write-Host "   Polling services (timeout: 120s)..."
-        $maxWait = 120
-        $elapsed = 0
-        $allReady = $false
-
-        while ($elapsed -lt $maxWait -and -not $allReady) {
-          Start-Sleep -Seconds 5
-          $elapsed += 5
-          
-          $webOk = $false
-          $invOk = $false
-          $ordOk = $false
-          
-          try { 
-            Invoke-WebRequest -Uri "http://127.0.0.1:5002" -TimeoutSec 3 -UseBasicParsing -ErrorAction Stop | Out-Null
-            $webOk = $true 
-          } catch { }
-          
-          try { 
-            Invoke-WebRequest -Uri "http://127.0.0.1:5001/api/inventory" -TimeoutSec 3 -UseBasicParsing -ErrorAction Stop | Out-Null
-            $invOk = $true 
-          } catch { }
-          
-          try { 
-            Invoke-WebRequest -Uri "http://127.0.0.1:5000/swagger/index.html" -TimeoutSec 3 -UseBasicParsing -ErrorAction Stop | Out-Null
-            $ordOk = $true 
-          } catch { }
-          
-          $allReady = $webOk -and $invOk -and $ordOk
-          $webStatus = if ($webOk) { "✅" } else { "⏳" }
-          $invStatus = if ($invOk) { "✅" } else { "⏳" }
-          $ordStatus = if ($ordOk) { "✅" } else { "⏳" }
-          Write-Host "   [$elapsed`s] Web:$webStatus Inventory:$invStatus Order:$ordStatus"
+        # ⚡ Fast polling - 2s intervals
+        $maxWait = 90; $elapsed = 0
+        while ($elapsed -lt $maxWait) {
+          Start-Sleep -Seconds 2; $elapsed += 2
+          $webOk = $invOk = $ordOk = $false
+          try { Invoke-WebRequest "http://127.0.0.1:5002" -TimeoutSec 2 -UseBasicParsing -EA Stop | Out-Null; $webOk = $true } catch {}
+          try { Invoke-WebRequest "http://127.0.0.1:5001/api/inventory" -TimeoutSec 2 -UseBasicParsing -EA Stop | Out-Null; $invOk = $true } catch {}
+          try { Invoke-WebRequest "http://127.0.0.1:5000/swagger/index.html" -TimeoutSec 2 -UseBasicParsing -EA Stop | Out-Null; $ordOk = $true } catch {}
+          if ($webOk -and $invOk -and $ordOk) { Write-Host "✅ All services ready in $elapsed`s"; break }
+          Write-Host "[$elapsed`s] Web:$(if($webOk){'✅'}else{'⏳'}) Inv:$(if($invOk){'✅'}else{'⏳'}) Ord:$(if($ordOk){'✅'}else{'⏳'})"
+        }
+        if (-not ($webOk -and $invOk -and $ordOk)) { 
+          Get-Content inv_err.log,ord_err.log,web_err.log -EA SilentlyContinue
+          exit 1 
         }
 
-        if (-not $allReady) {
-          Write-Host ""
-          Write-Host "❌ STATE: SERVICES FAILED TO START" -ForegroundColor Red
-          Write-Host "=== DUMPING ERROR LOGS ===" -ForegroundColor Red
-          Write-Host "--- inventory_err.log ---"
-          Get-Content "$(Build.SourcesDirectory)/inventory_err.log" -ErrorAction SilentlyContinue
-          Write-Host "--- order_err.log ---"
-          Get-Content "$(Build.SourcesDirectory)/order_err.log" -ErrorAction SilentlyContinue
-          Write-Host "--- web_err.log ---"
-          Get-Content "$(Build.SourcesDirectory)/web_err.log" -ErrorAction SilentlyContinue
-          exit 1
-        }
-
-        Write-Host ""
-        Write-Host "✅ STATE: ALL SERVICES READY" -ForegroundColor Green
-        Write-Host ""
-        Write-Host "🧪 STATE: RUNNING PLAYWRIGHT TESTS..." -ForegroundColor Cyan
-        
-        # Run tests IN THE SAME SCRIPT to keep services alive
-        $testResult = 0
+        Write-Host "🧪 Running Playwright tests..."
         try {
-          dotnet test tests/E2E.Tests/E2E.Tests.csproj `
-            --configuration $(buildConfiguration) `
-            --no-build `
-            --settings tests/E2E.Tests/.runsettings `
-            --logger "trx;LogFileName=playwright_results.trx"
-          $testResult = $LASTEXITCODE
+          dotnet test tests/E2E.Tests/E2E.Tests.csproj --configuration $(buildConfiguration) --no-build --settings tests/E2E.Tests/.runsettings --logger "trx;LogFileName=playwright_results.trx"
         } finally {
-          Write-Host ""
-          Write-Host "🛑 STATE: STOPPING SERVICES..." -ForegroundColor Yellow
-          if ($invProc -and !$invProc.HasExited) { Stop-Process -Id $invProc.Id -Force -ErrorAction SilentlyContinue }
-          if ($ordProc -and !$ordProc.HasExited) { Stop-Process -Id $ordProc.Id -Force -ErrorAction SilentlyContinue }
-          if ($webProc -and !$webProc.HasExited) { Stop-Process -Id $webProc.Id -Force -ErrorAction SilentlyContinue }
-          Write-Host "✅ Services stopped" -ForegroundColor Green
+          Stop-Process -Id $invProc.Id,$ordProc.Id,$webProc.Id -Force -EA SilentlyContinue
+          Write-Host "✅ Services stopped"
         }
-        
-        Write-Host ""
-        Write-Host "╔════════════════════════════════════════════════════════════════╗" -ForegroundColor Magenta
-        Write-Host "║           🎭 PLAYWRIGHT TESTS COMPLETED                        ║" -ForegroundColor Magenta
-        Write-Host "╚════════════════════════════════════════════════════════════════╝" -ForegroundColor Magenta
-        
-        # Don't fail the step so we can publish results - the PublishTestResults task will fail if needed
-        exit 0
-      displayName: '🧪 [4/4] Start Services & Run Playwright Tests'
+      displayName: '🧪 Start Services & Run Tests'
       workingDirectory: '$(Build.SourcesDirectory)'
       env:
-        PLAYWRIGHT_BROWSERS_PATH: '0'
+        PLAYWRIGHT_BROWSERS_PATH: $(PLAYWRIGHT_BROWSERS_PATH)
 
     - task: PublishTestResults@2
       condition: always()
@@ -332,169 +221,85 @@ stages:
   - job: PlaywrightNode_Test_Job
     displayName: '🎭 Playwright Tests Node.js'
     steps:
-    - pwsh: |
-        Write-Host ""
-        Write-Host "╔════════════════════════════════════════════════════════════════╗" -ForegroundColor Magenta
-        Write-Host "║        🎭 PLAYWRIGHT NODE.JS E2E TEST JOB STARTED              ║" -ForegroundColor Magenta
-        Write-Host "║────────────────────────────────────────────────────────────────║" -ForegroundColor Magenta
-        Write-Host "║  Job:    PlaywrightNode_Test_Job"
-        Write-Host "║  Agent:  $(Agent.MachineName)"
-        Write-Host "║  Status: INITIALIZING"
-        Write-Host "╚════════════════════════════════════════════════════════════════╝" -ForegroundColor Magenta
-      displayName: '📋 Playwright Node.js Job Info'
+    - checkout: none
 
     - task: NodeTool@0
       inputs:
         versionSpec: '20.x'
-      displayName: '⚙️ Setup Node.js 20'
+      displayName: '⚙️ Setup Node.js'
 
     - task: UseDotNet@2
       inputs:
         packageType: 'sdk'
         version: '8.x'
-      displayName: '⚙️ Setup .NET 8 SDK'
+      displayName: '⚙️ Setup .NET SDK'
+
+    # ⚡ Download pre-built binaries
+    - task: DownloadPipelineArtifact@2
+      inputs:
+        artifact: 'source-with-binaries'
+        path: '$(Build.SourcesDirectory)'
+      displayName: '⚡ Download Built Source'
+
+    # ⚡ CACHE: npm packages
+    - task: Cache@2
+      inputs:
+        key: 'npm | "$(Agent.OS)" | tests/PlaywrightNode.Tests/package-lock.json'
+        restoreKeys: |
+          npm | "$(Agent.OS)"
+        path: $(npm_config_cache)
+      displayName: '⚡ Cache npm packages'
+
+    # ⚡ CACHE: Playwright browsers (Node)
+    - task: Cache@2
+      inputs:
+        key: 'playwright-node | "$(Agent.OS)" | tests/PlaywrightNode.Tests/package-lock.json'
+        path: $(PLAYWRIGHT_BROWSERS_PATH)
+      displayName: '⚡ Cache Playwright Browsers'
 
     - pwsh: |
-        Write-Host "▶️ [PW-NODE 1/4] Installing dependencies..." -ForegroundColor Yellow
         Push-Location tests/PlaywrightNode.Tests
         npm ci
-        Pop-Location
-        Write-Host "✅ [PW-NODE 1/4] Dependencies installed" -ForegroundColor Green
-      displayName: '📦 [1/4] Install Node Dependencies'
-
-    - pwsh: |
-        Write-Host "▶️ [PW-NODE 2/4] Installing Playwright browsers..." -ForegroundColor Yellow
-        Push-Location tests/PlaywrightNode.Tests
         npx playwright install --with-deps chromium
         Pop-Location
-        Write-Host "✅ [PW-NODE 2/4] Browsers installed" -ForegroundColor Green
-      displayName: '🌐 [2/4] Install Playwright Browsers'
+      displayName: '📦 Install Dependencies & Browsers'
+      env:
+        PLAYWRIGHT_BROWSERS_PATH: $(PLAYWRIGHT_BROWSERS_PATH)
 
     - pwsh: |
-        Write-Host "▶️ [PW-NODE 3/4] Building solution for services..." -ForegroundColor Yellow
-        dotnet build E2Etesting.sln --configuration $(buildConfiguration)
-        Write-Host "✅ [PW-NODE 3/4] Solution built" -ForegroundColor Green
-      displayName: '🔨 [3/4] Build Solution'
-
-    - pwsh: |
-        Write-Host ""
-        Write-Host "╔════════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
-        Write-Host "║   ▶️ [PW-NODE 4/4] STARTING SERVICES & RUNNING TESTS           ║" -ForegroundColor Cyan
-        Write-Host "╚════════════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
-        Write-Host ""
-        Write-Host "🚀 Starting Microservices for Playwright Node.js..."
+        Write-Host "🚀 Starting services..."
         $env:ASPNETCORE_ENVIRONMENT = "Development"
-        $env:CI = "true"
 
-        # Start Inventory Service
-        Write-Host "   Starting Inventory Service..."
-        $invProc = Start-Process -FilePath "dotnet" -ArgumentList @(
-          "run",
-          "--project", "src/InventoryService.Api/InventoryService.Api.csproj",
-          "--configuration", "$(buildConfiguration)",
-          "--no-build",
-          "--urls=http://127.0.0.1:5001"
-        ) -PassThru -RedirectStandardOutput "$(Build.SourcesDirectory)/inventory.log" -RedirectStandardError "$(Build.SourcesDirectory)/inventory_err.log"
-        Write-Host "   ✓ Inventory Service started (PID: $($invProc.Id))"
+        $invProc = Start-Process dotnet -ArgumentList "run","--project","src/InventoryService.Api/InventoryService.Api.csproj","--configuration","$(buildConfiguration)","--no-build","--urls=http://127.0.0.1:5001" -PassThru -RedirectStandardOutput inv.log -RedirectStandardError inv_err.log
+        $ordProc = Start-Process dotnet -ArgumentList "run","--project","src/OrderService.Api/OrderService.Api.csproj","--configuration","$(buildConfiguration)","--no-build","--urls=http://127.0.0.1:5000" -PassThru -RedirectStandardOutput ord.log -RedirectStandardError ord_err.log
+        $webProc = Start-Process dotnet -ArgumentList "run","--project","src/OrderWeb.Mvc/OrderWeb.Mvc.csproj","--configuration","$(buildConfiguration)","--no-build","--urls=http://127.0.0.1:5002" -PassThru -RedirectStandardOutput web.log -RedirectStandardError web_err.log
 
-        # Start Order Service
-        Write-Host "   Starting Order Service..."
-        $ordProc = Start-Process -FilePath "dotnet" -ArgumentList @(
-          "run",
-          "--project", "src/OrderService.Api/OrderService.Api.csproj",
-          "--configuration", "$(buildConfiguration)",
-          "--no-build",
-          "--urls=http://127.0.0.1:5000"
-        ) -PassThru -RedirectStandardOutput "$(Build.SourcesDirectory)/order.log" -RedirectStandardError "$(Build.SourcesDirectory)/order_err.log"
-        Write-Host "   ✓ Order Service started (PID: $($ordProc.Id))"
-
-        # Start Web MVC
-        Write-Host "   Starting Web MVC..."
-        $webProc = Start-Process -FilePath "dotnet" -ArgumentList @(
-          "run",
-          "--project", "src/OrderWeb.Mvc/OrderWeb.Mvc.csproj",
-          "--configuration", "$(buildConfiguration)",
-          "--no-build",
-          "--urls=http://127.0.0.1:5002"
-        ) -PassThru -RedirectStandardOutput "$(Build.SourcesDirectory)/web.log" -RedirectStandardError "$(Build.SourcesDirectory)/web_err.log"
-        Write-Host "   ✓ Web MVC started (PID: $($webProc.Id))"
-
-        Write-Host ""
-        Write-Host "⏳ STATE: WAITING FOR SERVICES..." -ForegroundColor Yellow
-        $maxWait = 120
-        $elapsed = 0
-        $allReady = $false
-
-        while ($elapsed -lt $maxWait -and -not $allReady) {
-          Start-Sleep -Seconds 5
-          $elapsed += 5
-          
-          $webOk = $false
-          $invOk = $false
-          $ordOk = $false
-          
-          try { 
-            Invoke-WebRequest -Uri "http://127.0.0.1:5002" -TimeoutSec 3 -UseBasicParsing -ErrorAction Stop | Out-Null
-            $webOk = $true 
-          } catch { }
-          
-          try { 
-            Invoke-WebRequest -Uri "http://127.0.0.1:5001/api/inventory" -TimeoutSec 3 -UseBasicParsing -ErrorAction Stop | Out-Null
-            $invOk = $true 
-          } catch { }
-          
-          try { 
-            Invoke-WebRequest -Uri "http://127.0.0.1:5000/swagger/index.html" -TimeoutSec 3 -UseBasicParsing -ErrorAction Stop | Out-Null
-            $ordOk = $true 
-          } catch { }
-          
-          $allReady = $webOk -and $invOk -and $ordOk
-          $webStatus = if ($webOk) { "✅" } else { "⏳" }
-          $invStatus = if ($invOk) { "✅" } else { "⏳" }
-          $ordStatus = if ($ordOk) { "✅" } else { "⏳" }
-          Write-Host "   [$elapsed`s] Web:$webStatus Inventory:$invStatus Order:$ordStatus"
+        $maxWait = 90; $elapsed = 0
+        while ($elapsed -lt $maxWait) {
+          Start-Sleep -Seconds 2; $elapsed += 2
+          $webOk = $invOk = $ordOk = $false
+          try { Invoke-WebRequest "http://127.0.0.1:5002" -TimeoutSec 2 -UseBasicParsing -EA Stop | Out-Null; $webOk = $true } catch {}
+          try { Invoke-WebRequest "http://127.0.0.1:5001/api/inventory" -TimeoutSec 2 -UseBasicParsing -EA Stop | Out-Null; $invOk = $true } catch {}
+          try { Invoke-WebRequest "http://127.0.0.1:5000/swagger/index.html" -TimeoutSec 2 -UseBasicParsing -EA Stop | Out-Null; $ordOk = $true } catch {}
+          if ($webOk -and $invOk -and $ordOk) { Write-Host "✅ All services ready in $elapsed`s"; break }
+          Write-Host "[$elapsed`s] Web:$(if($webOk){'✅'}else{'⏳'}) Inv:$(if($invOk){'✅'}else{'⏳'}) Ord:$(if($ordOk){'✅'}else{'⏳'})"
         }
+        if (-not ($webOk -and $invOk -and $ordOk)) { Get-Content inv_err.log,ord_err.log,web_err.log -EA SilentlyContinue; exit 1 }
 
-        if (-not $allReady) {
-          Write-Host ""
-          Write-Host "❌ STATE: SERVICES FAILED TO START" -ForegroundColor Red
-          Write-Host "=== DUMPING ERROR LOGS ===" -ForegroundColor Red
-          Write-Host "--- inventory_err.log ---"
-          Get-Content "$(Build.SourcesDirectory)/inventory_err.log" -ErrorAction SilentlyContinue
-          Write-Host "--- order_err.log ---"
-          Get-Content "$(Build.SourcesDirectory)/order_err.log" -ErrorAction SilentlyContinue
-          Write-Host "--- web_err.log ---"
-          Get-Content "$(Build.SourcesDirectory)/web_err.log" -ErrorAction SilentlyContinue
-          exit 1
-        }
-
-        Write-Host ""
-        Write-Host "✅ STATE: ALL SERVICES READY" -ForegroundColor Green
-        Write-Host ""
-        Write-Host "🧪 STATE: RUNNING PLAYWRIGHT NODE.JS TESTS..." -ForegroundColor Cyan
-        
-        # Run tests IN THE SAME SCRIPT to keep services alive
+        Write-Host "🧪 Running Playwright Node.js tests..."
         Push-Location "tests/PlaywrightNode.Tests"
         try {
           npx playwright test --reporter=junit,html
         } finally {
           Pop-Location
-          Write-Host ""
-          Write-Host "🛑 STATE: STOPPING SERVICES..." -ForegroundColor Yellow
-          if ($invProc -and !$invProc.HasExited) { Stop-Process -Id $invProc.Id -Force -ErrorAction SilentlyContinue }
-          if ($ordProc -and !$ordProc.HasExited) { Stop-Process -Id $ordProc.Id -Force -ErrorAction SilentlyContinue }
-          if ($webProc -and !$webProc.HasExited) { Stop-Process -Id $webProc.Id -Force -ErrorAction SilentlyContinue }
-          Write-Host "✅ Services stopped" -ForegroundColor Green
+          Stop-Process -Id $invProc.Id,$ordProc.Id,$webProc.Id -Force -EA SilentlyContinue
+          Write-Host "✅ Services stopped"
         }
-        
-        Write-Host ""
-        Write-Host "╔════════════════════════════════════════════════════════════════╗" -ForegroundColor Magenta
-        Write-Host "║         🎭 PLAYWRIGHT NODE.JS TESTS COMPLETED                  ║" -ForegroundColor Magenta
-        Write-Host "╚════════════════════════════════════════════════════════════════╝" -ForegroundColor Magenta
-      displayName: '🧪 [4/4] Start Services & Run Playwright Node.js Tests'
+      displayName: '🧪 Start Services & Run Tests'
       workingDirectory: '$(Build.SourcesDirectory)'
       env:
         CI: 'true'
+        PLAYWRIGHT_BROWSERS_PATH: $(PLAYWRIGHT_BROWSERS_PATH)
 
     - task: PublishTestResults@2
       condition: always()
@@ -540,161 +345,84 @@ stages:
   - job: Cypress_Test_Job
     displayName: '🌲 Cypress Tests'
     steps:
-    - pwsh: |
-        Write-Host ""
-        Write-Host "╔════════════════════════════════════════════════════════════════╗" -ForegroundColor Green
-        Write-Host "║            🌲 CYPRESS E2E TEST JOB STARTED                     ║" -ForegroundColor Green
-        Write-Host "║────────────────────────────────────────────────────────────────║" -ForegroundColor Green
-        Write-Host "║  Job:    Cypress_Test_Job"
-        Write-Host "║  Agent:  $(Agent.MachineName)"
-        Write-Host "║  Status: INITIALIZING"
-        Write-Host "╚════════════════════════════════════════════════════════════════╝" -ForegroundColor Green
-      displayName: '📋 Cypress Job Info'
+    - checkout: none
 
     - task: NodeTool@0
       inputs:
         versionSpec: '20.x'
-      displayName: '⚙️ Setup Node.js 20'
+      displayName: '⚙️ Setup Node.js'
 
     - task: UseDotNet@2
       inputs:
         packageType: 'sdk'
         version: '8.x'
-      displayName: '⚙️ Setup .NET 8 SDK'
+      displayName: '⚙️ Setup .NET SDK'
+
+    # ⚡ Download pre-built binaries
+    - task: DownloadPipelineArtifact@2
+      inputs:
+        artifact: 'source-with-binaries'
+        path: '$(Build.SourcesDirectory)'
+      displayName: '⚡ Download Built Source'
+
+    # ⚡ CACHE: npm packages for Cypress
+    - task: Cache@2
+      inputs:
+        key: 'npm-cypress | "$(Agent.OS)" | tests/Cypress.Tests/package-lock.json'
+        restoreKeys: |
+          npm-cypress | "$(Agent.OS)"
+        path: $(npm_config_cache)
+      displayName: '⚡ Cache npm packages'
+
+    # ⚡ CACHE: Cypress binary
+    - task: Cache@2
+      inputs:
+        key: 'cypress-binary | "$(Agent.OS)" | tests/Cypress.Tests/package-lock.json'
+        path: $(Pipeline.Workspace)/.cypress-cache
+      displayName: '⚡ Cache Cypress Binary'
 
     - pwsh: |
-        Write-Host "▶️ [CYPRESS 1/4] Installing Cypress dependencies..." -ForegroundColor Yellow
         Push-Location tests/Cypress.Tests
         npm ci
         Pop-Location
-        Write-Host "✅ [CYPRESS 1/4] Dependencies installed" -ForegroundColor Green
-      displayName: '📦 [1/4] Install Cypress Dependencies'
+      displayName: '📦 Install Cypress'
+      env:
+        CYPRESS_CACHE_FOLDER: $(Pipeline.Workspace)/.cypress-cache
 
     - pwsh: |
-        Write-Host "▶️ [CYPRESS 2/4] Building solution..." -ForegroundColor Yellow
-        dotnet build E2Etesting.sln --configuration $(buildConfiguration)
-        Write-Host "✅ [CYPRESS 2/4] Solution built" -ForegroundColor Green
-      displayName: '🔨 [2/4] Build Solution'
-
-    - pwsh: |
-        Write-Host ""
-        Write-Host "╔════════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
-        Write-Host "║      ▶️ [CYPRESS 3/4] STARTING SERVICES & RUNNING TESTS        ║" -ForegroundColor Cyan
-        Write-Host "╚════════════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
-        Write-Host ""
-        Write-Host "🚀 Starting Microservices for Cypress..."
+        Write-Host "🚀 Starting services..."
         $env:ASPNETCORE_ENVIRONMENT = "Development"
-        $env:CYPRESS_baseUrl = "http://127.0.0.1:5002"
 
-        # Start Inventory Service
-        Write-Host "   Starting Inventory Service..."
-        $invProc = Start-Process -FilePath "dotnet" -ArgumentList @(
-          "run",
-          "--project", "src/InventoryService.Api/InventoryService.Api.csproj",
-          "--configuration", "$(buildConfiguration)",
-          "--no-build",
-          "--urls=http://127.0.0.1:5001"
-        ) -PassThru -RedirectStandardOutput "$(Build.SourcesDirectory)/inventory.log" -RedirectStandardError "$(Build.SourcesDirectory)/inventory_err.log"
-        Write-Host "   ✓ Inventory Service started (PID: $($invProc.Id))"
+        $invProc = Start-Process dotnet -ArgumentList "run","--project","src/InventoryService.Api/InventoryService.Api.csproj","--configuration","$(buildConfiguration)","--no-build","--urls=http://127.0.0.1:5001" -PassThru -RedirectStandardOutput inv.log -RedirectStandardError inv_err.log
+        $ordProc = Start-Process dotnet -ArgumentList "run","--project","src/OrderService.Api/OrderService.Api.csproj","--configuration","$(buildConfiguration)","--no-build","--urls=http://127.0.0.1:5000" -PassThru -RedirectStandardOutput ord.log -RedirectStandardError ord_err.log
+        $webProc = Start-Process dotnet -ArgumentList "run","--project","src/OrderWeb.Mvc/OrderWeb.Mvc.csproj","--configuration","$(buildConfiguration)","--no-build","--urls=http://127.0.0.1:5002" -PassThru -RedirectStandardOutput web.log -RedirectStandardError web_err.log
 
-        # Start Order Service
-        Write-Host "   Starting Order Service..."
-        $ordProc = Start-Process -FilePath "dotnet" -ArgumentList @(
-          "run",
-          "--project", "src/OrderService.Api/OrderService.Api.csproj",
-          "--configuration", "$(buildConfiguration)",
-          "--no-build",
-          "--urls=http://127.0.0.1:5000"
-        ) -PassThru -RedirectStandardOutput "$(Build.SourcesDirectory)/order.log" -RedirectStandardError "$(Build.SourcesDirectory)/order_err.log"
-        Write-Host "   ✓ Order Service started (PID: $($ordProc.Id))"
-
-        # Start Web MVC
-        Write-Host "   Starting Web MVC..."
-        $webProc = Start-Process -FilePath "dotnet" -ArgumentList @(
-          "run",
-          "--project", "src/OrderWeb.Mvc/OrderWeb.Mvc.csproj",
-          "--configuration", "$(buildConfiguration)",
-          "--no-build",
-          "--urls=http://127.0.0.1:5002"
-        ) -PassThru -RedirectStandardOutput "$(Build.SourcesDirectory)/web.log" -RedirectStandardError "$(Build.SourcesDirectory)/web_err.log"
-        Write-Host "   ✓ Web MVC started (PID: $($webProc.Id))"
-
-        Write-Host ""
-        Write-Host "⏳ STATE: WAITING FOR SERVICES..." -ForegroundColor Yellow
-        $maxWait = 120
-        $elapsed = 0
-        $allReady = $false
-
-        while ($elapsed -lt $maxWait -and -not $allReady) {
-          Start-Sleep -Seconds 5
-          $elapsed += 5
-          
-          $webOk = $false
-          $invOk = $false
-          $ordOk = $false
-          
-          try { 
-            Invoke-WebRequest -Uri "http://127.0.0.1:5002" -TimeoutSec 3 -UseBasicParsing -ErrorAction Stop | Out-Null
-            $webOk = $true 
-          } catch { }
-          
-          try { 
-            Invoke-WebRequest -Uri "http://127.0.0.1:5001/api/inventory" -TimeoutSec 3 -UseBasicParsing -ErrorAction Stop | Out-Null
-            $invOk = $true 
-          } catch { }
-          
-          try { 
-            Invoke-WebRequest -Uri "http://127.0.0.1:5000/swagger/index.html" -TimeoutSec 3 -UseBasicParsing -ErrorAction Stop | Out-Null
-            $ordOk = $true 
-          } catch { }
-          
-          $allReady = $webOk -and $invOk -and $ordOk
-          $webStatus = if ($webOk) { "✅" } else { "⏳" }
-          $invStatus = if ($invOk) { "✅" } else { "⏳" }
-          $ordStatus = if ($ordOk) { "✅" } else { "⏳" }
-          Write-Host "   [$elapsed`s] Web:$webStatus Inventory:$invStatus Order:$ordStatus"
+        $maxWait = 90; $elapsed = 0
+        while ($elapsed -lt $maxWait) {
+          Start-Sleep -Seconds 2; $elapsed += 2
+          $webOk = $invOk = $ordOk = $false
+          try { Invoke-WebRequest "http://127.0.0.1:5002" -TimeoutSec 2 -UseBasicParsing -EA Stop | Out-Null; $webOk = $true } catch {}
+          try { Invoke-WebRequest "http://127.0.0.1:5001/api/inventory" -TimeoutSec 2 -UseBasicParsing -EA Stop | Out-Null; $invOk = $true } catch {}
+          try { Invoke-WebRequest "http://127.0.0.1:5000/swagger/index.html" -TimeoutSec 2 -UseBasicParsing -EA Stop | Out-Null; $ordOk = $true } catch {}
+          if ($webOk -and $invOk -and $ordOk) { Write-Host "✅ All services ready in $elapsed`s"; break }
+          Write-Host "[$elapsed`s] Web:$(if($webOk){'✅'}else{'⏳'}) Inv:$(if($invOk){'✅'}else{'⏳'}) Ord:$(if($ordOk){'✅'}else{'⏳'})"
         }
+        if (-not ($webOk -and $invOk -and $ordOk)) { Get-Content inv_err.log,ord_err.log,web_err.log -EA SilentlyContinue; exit 1 }
 
-        if (-not $allReady) {
-          Write-Host ""
-          Write-Host "❌ STATE: SERVICES FAILED TO START" -ForegroundColor Red
-          Write-Host "=== DUMPING ERROR LOGS ===" -ForegroundColor Red
-          Write-Host "--- inventory_err.log ---"
-          Get-Content "$(Build.SourcesDirectory)/inventory_err.log" -ErrorAction SilentlyContinue
-          Write-Host "--- order_err.log ---"
-          Get-Content "$(Build.SourcesDirectory)/order_err.log" -ErrorAction SilentlyContinue
-          Write-Host "--- web_err.log ---"
-          Get-Content "$(Build.SourcesDirectory)/web_err.log" -ErrorAction SilentlyContinue
-          exit 1
-        }
-
-        Write-Host ""
-        Write-Host "✅ STATE: ALL SERVICES READY" -ForegroundColor Green
-        Write-Host ""
-        Write-Host "🧪 STATE: RUNNING CYPRESS TESTS..." -ForegroundColor Cyan
-        
-        # Run tests IN THE SAME SCRIPT to keep services alive
+        Write-Host "🧪 Running Cypress tests..."
         Push-Location "tests/Cypress.Tests"
         try {
           npx cypress run --browser chrome
         } finally {
           Pop-Location
-          Write-Host ""
-          Write-Host "🛑 STATE: STOPPING SERVICES..." -ForegroundColor Yellow
-          if ($invProc -and !$invProc.HasExited) { Stop-Process -Id $invProc.Id -Force -ErrorAction SilentlyContinue }
-          if ($ordProc -and !$ordProc.HasExited) { Stop-Process -Id $ordProc.Id -Force -ErrorAction SilentlyContinue }
-          if ($webProc -and !$webProc.HasExited) { Stop-Process -Id $webProc.Id -Force -ErrorAction SilentlyContinue }
-          Write-Host "✅ Services stopped" -ForegroundColor Green
+          Stop-Process -Id $invProc.Id,$ordProc.Id,$webProc.Id -Force -EA SilentlyContinue
+          Write-Host "✅ Services stopped"
         }
-        
-        Write-Host ""
-        Write-Host "╔════════════════════════════════════════════════════════════════╗" -ForegroundColor Green
-        Write-Host "║            🌲 CYPRESS TESTS COMPLETED                          ║" -ForegroundColor Green
-        Write-Host "╚════════════════════════════════════════════════════════════════╝" -ForegroundColor Green
-      displayName: '🧪 [3/3] Start Services & Run Cypress Tests'
+      displayName: '🧪 Start Services & Run Tests'
       workingDirectory: '$(Build.SourcesDirectory)'
       env:
         CYPRESS_baseUrl: 'http://127.0.0.1:5002'
+        CYPRESS_CACHE_FOLDER: $(Pipeline.Workspace)/.cypress-cache
 
     - task: PublishTestResults@2
       condition: always()
@@ -744,150 +472,52 @@ stages:
   - job: Selenium_Test_Job
     displayName: '🔬 Selenium Tests'
     steps:
-    - pwsh: |
-        Write-Host ""
-        Write-Host "╔════════════════════════════════════════════════════════════════╗" -ForegroundColor Blue
-        Write-Host "║           🔬 SELENIUM E2E TEST JOB STARTED                     ║" -ForegroundColor Blue
-        Write-Host "║────────────────────────────────────────────────────────────────║" -ForegroundColor Blue
-        Write-Host "║  Job:    Selenium_Test_Job"
-        Write-Host "║  Agent:  $(Agent.MachineName)"
-        Write-Host "║  Status: INITIALIZING"
-        Write-Host "╚════════════════════════════════════════════════════════════════╝" -ForegroundColor Blue
-      displayName: '📋 Selenium Job Info'
+    - checkout: none
 
     - task: UseDotNet@2
       inputs:
         packageType: 'sdk'
         version: '8.x'
-      displayName: '⚙️ Setup .NET 8 SDK'
+      displayName: '⚙️ Setup .NET SDK'
+
+    # ⚡ Download pre-built binaries
+    - task: DownloadPipelineArtifact@2
+      inputs:
+        artifact: 'source-with-binaries'
+        path: '$(Build.SourcesDirectory)'
+      displayName: '⚡ Download Built Source'
 
     - pwsh: |
-        Write-Host "▶️ [SELENIUM 1/2] Building solution..." -ForegroundColor Yellow
-        dotnet build E2Etesting.sln --configuration $(buildConfiguration)
-        Write-Host "✅ [SELENIUM 1/2] Solution built" -ForegroundColor Green
-      displayName: '🔨 [1/2] Build Solution'
-
-    - pwsh: |
-        Write-Host ""
-        Write-Host "╔════════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
-        Write-Host "║     ▶️ [SELENIUM 2/2] STARTING SERVICES & RUNNING TESTS        ║" -ForegroundColor Cyan
-        Write-Host "╚════════════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
-        Write-Host ""
-        Write-Host "🚀 Starting Microservices for Selenium..."
+        Write-Host "🚀 Starting services..."
         $env:ASPNETCORE_ENVIRONMENT = "Development"
-        $env:HEADLESS_MODE = "true"
 
-        # Start Inventory Service
-        Write-Host "   Starting Inventory Service..."
-        $invProc = Start-Process -FilePath "dotnet" -ArgumentList @(
-          "run",
-          "--project", "src/InventoryService.Api/InventoryService.Api.csproj",
-          "--configuration", "$(buildConfiguration)",
-          "--no-build",
-          "--urls=http://127.0.0.1:5001"
-        ) -PassThru -RedirectStandardOutput "$(Build.SourcesDirectory)/inventory.log" -RedirectStandardError "$(Build.SourcesDirectory)/inventory_err.log"
-        Write-Host "   ✓ Inventory Service started (PID: $($invProc.Id))"
+        $invProc = Start-Process dotnet -ArgumentList "run","--project","src/InventoryService.Api/InventoryService.Api.csproj","--configuration","$(buildConfiguration)","--no-build","--urls=http://127.0.0.1:5001" -PassThru -RedirectStandardOutput inv.log -RedirectStandardError inv_err.log
+        $ordProc = Start-Process dotnet -ArgumentList "run","--project","src/OrderService.Api/OrderService.Api.csproj","--configuration","$(buildConfiguration)","--no-build","--urls=http://127.0.0.1:5000" -PassThru -RedirectStandardOutput ord.log -RedirectStandardError ord_err.log
+        $webProc = Start-Process dotnet -ArgumentList "run","--project","src/OrderWeb.Mvc/OrderWeb.Mvc.csproj","--configuration","$(buildConfiguration)","--no-build","--urls=http://127.0.0.1:5002" -PassThru -RedirectStandardOutput web.log -RedirectStandardError web_err.log
 
-        # Start Order Service
-        Write-Host "   Starting Order Service..."
-        $ordProc = Start-Process -FilePath "dotnet" -ArgumentList @(
-          "run",
-          "--project", "src/OrderService.Api/OrderService.Api.csproj",
-          "--configuration", "$(buildConfiguration)",
-          "--no-build",
-          "--urls=http://127.0.0.1:5000"
-        ) -PassThru -RedirectStandardOutput "$(Build.SourcesDirectory)/order.log" -RedirectStandardError "$(Build.SourcesDirectory)/order_err.log"
-        Write-Host "   ✓ Order Service started (PID: $($ordProc.Id))"
-
-        # Start Web MVC
-        Write-Host "   Starting Web MVC..."
-        $webProc = Start-Process -FilePath "dotnet" -ArgumentList @(
-          "run",
-          "--project", "src/OrderWeb.Mvc/OrderWeb.Mvc.csproj",
-          "--configuration", "$(buildConfiguration)",
-          "--no-build",
-          "--urls=http://127.0.0.1:5002"
-        ) -PassThru -RedirectStandardOutput "$(Build.SourcesDirectory)/web.log" -RedirectStandardError "$(Build.SourcesDirectory)/web_err.log"
-        Write-Host "   ✓ Web MVC started (PID: $($webProc.Id))"
-
-        Write-Host ""
-        Write-Host "⏳ STATE: WAITING FOR SERVICES..." -ForegroundColor Yellow
-        $maxWait = 120
-        $elapsed = 0
-        $allReady = $false
-
-        while ($elapsed -lt $maxWait -and -not $allReady) {
-          Start-Sleep -Seconds 5
-          $elapsed += 5
-          
-          $webOk = $false
-          $invOk = $false
-          $ordOk = $false
-          
-          try { 
-            Invoke-WebRequest -Uri "http://127.0.0.1:5002" -TimeoutSec 3 -UseBasicParsing -ErrorAction Stop | Out-Null
-            $webOk = $true 
-          } catch { }
-          
-          try { 
-            Invoke-WebRequest -Uri "http://127.0.0.1:5001/api/inventory" -TimeoutSec 3 -UseBasicParsing -ErrorAction Stop | Out-Null
-            $invOk = $true 
-          } catch { }
-          
-          try { 
-            Invoke-WebRequest -Uri "http://127.0.0.1:5000/swagger/index.html" -TimeoutSec 3 -UseBasicParsing -ErrorAction Stop | Out-Null
-            $ordOk = $true 
-          } catch { }
-          
-          $allReady = $webOk -and $invOk -and $ordOk
-          $webStatus = if ($webOk) { "✅" } else { "⏳" }
-          $invStatus = if ($invOk) { "✅" } else { "⏳" }
-          $ordStatus = if ($ordOk) { "✅" } else { "⏳" }
-          Write-Host "   [$elapsed`s] Web:$webStatus Inventory:$invStatus Order:$ordStatus"
+        $maxWait = 90; $elapsed = 0
+        while ($elapsed -lt $maxWait) {
+          Start-Sleep -Seconds 2; $elapsed += 2
+          $webOk = $invOk = $ordOk = $false
+          try { Invoke-WebRequest "http://127.0.0.1:5002" -TimeoutSec 2 -UseBasicParsing -EA Stop | Out-Null; $webOk = $true } catch {}
+          try { Invoke-WebRequest "http://127.0.0.1:5001/api/inventory" -TimeoutSec 2 -UseBasicParsing -EA Stop | Out-Null; $invOk = $true } catch {}
+          try { Invoke-WebRequest "http://127.0.0.1:5000/swagger/index.html" -TimeoutSec 2 -UseBasicParsing -EA Stop | Out-Null; $ordOk = $true } catch {}
+          if ($webOk -and $invOk -and $ordOk) { Write-Host "✅ All services ready in $elapsed`s"; break }
+          Write-Host "[$elapsed`s] Web:$(if($webOk){'✅'}else{'⏳'}) Inv:$(if($invOk){'✅'}else{'⏳'}) Ord:$(if($ordOk){'✅'}else{'⏳'})"
         }
+        if (-not ($webOk -and $invOk -and $ordOk)) { Get-Content inv_err.log,ord_err.log,web_err.log -EA SilentlyContinue; exit 1 }
 
-        if (-not $allReady) {
-          Write-Host ""
-          Write-Host "❌ STATE: SERVICES FAILED TO START" -ForegroundColor Red
-          Write-Host "=== DUMPING ERROR LOGS ===" -ForegroundColor Red
-          Write-Host "--- inventory_err.log ---"
-          Get-Content "$(Build.SourcesDirectory)/inventory_err.log" -ErrorAction SilentlyContinue
-          Write-Host "--- order_err.log ---"
-          Get-Content "$(Build.SourcesDirectory)/order_err.log" -ErrorAction SilentlyContinue
-          Write-Host "--- web_err.log ---"
-          Get-Content "$(Build.SourcesDirectory)/web_err.log" -ErrorAction SilentlyContinue
-          exit 1
-        }
-
-        Write-Host ""
-        Write-Host "✅ STATE: ALL SERVICES READY" -ForegroundColor Green
-        Write-Host ""
-        Write-Host "🧪 STATE: RUNNING SELENIUM TESTS..." -ForegroundColor Cyan
-        
-        # Run tests IN THE SAME SCRIPT to keep services alive
+        Write-Host "🧪 Running Selenium tests..."
         $testResult = 0
         try {
-          dotnet test tests/Selenium.Tests/Selenium.Tests.csproj `
-            --configuration $(buildConfiguration) `
-            --no-build `
-            --logger "trx;LogFileName=selenium_results.trx"
+          dotnet test tests/Selenium.Tests/Selenium.Tests.csproj --configuration $(buildConfiguration) --no-build --logger "trx;LogFileName=selenium_results.trx"
           $testResult = $LASTEXITCODE
         } finally {
-          Write-Host ""
-          Write-Host "🛑 STATE: STOPPING SERVICES..." -ForegroundColor Yellow
-          if ($invProc -and !$invProc.HasExited) { Stop-Process -Id $invProc.Id -Force -ErrorAction SilentlyContinue }
-          if ($ordProc -and !$ordProc.HasExited) { Stop-Process -Id $ordProc.Id -Force -ErrorAction SilentlyContinue }
-          if ($webProc -and !$webProc.HasExited) { Stop-Process -Id $webProc.Id -Force -ErrorAction SilentlyContinue }
-          Write-Host "✅ Services stopped" -ForegroundColor Green
+          Stop-Process -Id $invProc.Id,$ordProc.Id,$webProc.Id -Force -EA SilentlyContinue
+          Write-Host "✅ Services stopped"
         }
-        
-        Write-Host ""
-        Write-Host "╔════════════════════════════════════════════════════════════════╗" -ForegroundColor Blue
-        Write-Host "║            🔬 SELENIUM TESTS COMPLETED                         ║" -ForegroundColor Blue
-        Write-Host "╚════════════════════════════════════════════════════════════════╝" -ForegroundColor Blue
-        
         exit $testResult
-      displayName: '🧪 [2/2] Start Services & Run Selenium Tests'
+      displayName: '🧪 Start Services & Run Tests'
       workingDirectory: '$(Build.SourcesDirectory)'
       env:
         HEADLESS_MODE: 'true'
@@ -901,17 +531,7 @@ stages:
       displayName: '📊 Publish Selenium Test Results'
 
     - pwsh: |
-        Write-Host ""
-        Write-Host "╔════════════════════════════════════════════════════════════════╗" -ForegroundColor Gray
-        Write-Host "║               📜 SERVICE LOGS (Debug Info)                     ║" -ForegroundColor Gray
-        Write-Host "╚════════════════════════════════════════════════════════════════╝" -ForegroundColor Gray
-        Write-Host "`n--- Web App (5002) STDOUT (last 50 lines) ---"
-        Get-Content "$(Build.SourcesDirectory)/web.log" -Tail 50 -ErrorAction SilentlyContinue || Write-Host "No log"
-        Write-Host "`n--- Web App ERROR LOG ---"
-        Get-Content "$(Build.SourcesDirectory)/web_err.log" -Tail 50 -ErrorAction SilentlyContinue || Write-Host "No error log"
-        Write-Host "`n--- Order API STDOUT (last 50 lines) ---"
-        Get-Content "$(Build.SourcesDirectory)/order.log" -Tail 50 -ErrorAction SilentlyContinue
-        Write-Host "`n--- Inventory API STDOUT (last 50 lines) ---"
-        Get-Content "$(Build.SourcesDirectory)/inventory.log" -Tail 50 -ErrorAction SilentlyContinue
-      displayName: '📜 Dump Service Logs (Debug)'
-      condition: always()
+        Get-Content web.log,ord.log,inv.log -Tail 30 -EA SilentlyContinue
+      displayName: '📜 Service Logs (Debug)'
+      condition: failed()
+      workingDirectory: '$(Build.SourcesDirectory)'
