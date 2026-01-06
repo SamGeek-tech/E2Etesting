@@ -263,12 +263,62 @@ stages:
         failTaskOnFailedTests: true
       displayName: '📊 Publish Playwright Test Results'
 
+    - pwsh: |
+        $outputDir = "$(Build.SourcesDirectory)/tests/E2E.Tests/bin/$(buildConfiguration)/net8.0"
+        $artifactDir = "$(Build.SourcesDirectory)/playwright-dotnet-artifacts"
+        
+        Write-Host "Collecting Playwright .NET artifacts from: $outputDir"
+        New-Item -ItemType Directory -Path $artifactDir -Force | Out-Null
+        
+        # Copy trace files
+        $traces = Get-ChildItem -Path $outputDir -Filter "*.zip" -Recurse -ErrorAction SilentlyContinue
+        if ($traces) {
+          $tracesDir = "$artifactDir/traces"
+          New-Item -ItemType Directory -Path $tracesDir -Force | Out-Null
+          $traces | Copy-Item -Destination $tracesDir
+          Write-Host "✅ Copied $($traces.Count) trace file(s)"
+        } else {
+          Write-Host "⚠️ No trace files found"
+        }
+        
+        # Copy screenshots
+        $screenshots = Get-ChildItem -Path $outputDir -Filter "*.png" -Recurse -ErrorAction SilentlyContinue
+        if ($screenshots) {
+          $screenshotsDir = "$artifactDir/screenshots"
+          New-Item -ItemType Directory -Path $screenshotsDir -Force | Out-Null
+          $screenshots | Copy-Item -Destination $screenshotsDir
+          Write-Host "✅ Copied $($screenshots.Count) screenshot(s)"
+        } else {
+          Write-Host "⚠️ No screenshots found"
+        }
+        
+        # Copy videos folder if exists
+        $videosDir = "$outputDir/videos"
+        if (Test-Path $videosDir) {
+          Copy-Item -Path $videosDir -Destination "$artifactDir/videos" -Recurse
+          Write-Host "✅ Copied videos folder"
+        } else {
+          Write-Host "⚠️ No videos folder found"
+        }
+        
+        # Create README if no artifacts found
+        $hasArtifacts = (Get-ChildItem -Path $artifactDir -Recurse -File).Count -gt 0
+        if (-not $hasArtifacts) {
+          "No traces, screenshots, or videos were recorded during this test run." | Out-File "$artifactDir/README.txt"
+          Write-Host "⚠️ No artifacts found, created placeholder"
+        }
+        
+        Write-Host "Artifact directory contents:"
+        Get-ChildItem -Path $artifactDir -Recurse | ForEach-Object { Write-Host "  $($_.FullName)" }
+      displayName: '📁 Collect Playwright .NET Artifacts'
+      condition: always()
+
     - task: PublishBuildArtifacts@1
       condition: always()
       inputs:
-        PathtoPublish: '$(Build.SourcesDirectory)/tests/E2E.Tests'
-        ArtifactName: 'playwright-traces-screenshots-videos'
-      displayName: '📁 Publish Playwright Artifacts'
+        PathtoPublish: '$(Build.SourcesDirectory)/playwright-dotnet-artifacts'
+        ArtifactName: 'playwright-dotnet-traces-screenshots-videos'
+      displayName: '📁 Publish Playwright .NET Artifacts'
 
   # ==================== PLAYWRIGHT NODE.JS E2E ====================
   - job: PlaywrightNode_Test_Job

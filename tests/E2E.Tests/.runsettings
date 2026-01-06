@@ -7,7 +7,13 @@
     </LaunchOptions>
     <ContextOptions>
       <RecordVideoDir>videos/</RecordVideoDir>
-      <TracingMode>RetainOnFailure</TracingMode>
+      <RecordVideoSize>1280, 720</RecordVideoSize>
+      <ScreenshotOnFailure>true</ScreenshotOnFailure>
     </ContextOptions>
+    <Tracing>
+      <Snapshots>true</Snapshots>
+      <Screenshots>true</Screenshots>
+      <Sources>true</Sources>
+    </Tracing>
   </Playwright>
 </RunSettings>
