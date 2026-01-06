@@ -69,6 +69,9 @@ stages:
       displayName: 'Build Playwright E2E Project'
       workingDirectory: '$(Build.SourcesDirectory)'
 
+    - script: dotnet build E2Etesting.sln --configuration $(buildConfiguration)
+      displayName: 'Build Solution (Prevent Parallel Race Conditions)'
+
     - pwsh: |
         Write-Host "Starting Microservices (detached)..."
         $env:ASPNETCORE_ENVIRONMENT = "Development"
@@ -78,17 +81,18 @@ stages:
         netstat -ano | findstr :5001 | for /f "tokens=5" %a in ('more') do taskkill /PID %a /F 2>$null
         netstat -ano | findstr :5002 | for /f "tokens=5" %a in ('more') do taskkill /PID %a /F 2>$null
 
-        Set-Location "$(Build.SourcesDirectory)/src/InventoryService.Api"
-        Start-Process powershell -ArgumentList "-Command `"dotnet run --urls=http://127.0.0.1:5001`"" -RedirectStandardOutput "$(Build.SourcesDirectory)/inventory.log" -RedirectStandardError "$(Build.SourcesDirectory)/inventory_err.log"
+        # Run with --no-build since we just built it. This prevents race conditions.
+        $invArgs = "run --project src/InventoryService.Api/InventoryService.Api.csproj --configuration $(buildConfiguration) --no-build --urls=http://127.0.0.1:5001"
+        Start-Process dotnet -ArgumentList $invArgs -RedirectStandardOutput "$(Build.SourcesDirectory)/inventory.log" -RedirectStandardError "$(Build.SourcesDirectory)/inventory_err.log"
 
-        Set-Location "$(Build.SourcesDirectory)/src/OrderService.Api"
-        Start-Process powershell -ArgumentList "-Command `"dotnet run --urls=http://127.0.0.1:5000`"" -RedirectStandardOutput "$(Build.SourcesDirectory)/order.log" -RedirectStandardError "$(Build.SourcesDirectory)/order_err.log"
+        $ordArgs = "run --project src/OrderService.Api/OrderService.Api.csproj --configuration $(buildConfiguration) --no-build --urls=http://127.0.0.1:5000"
+        Start-Process dotnet -ArgumentList $ordArgs -RedirectStandardOutput "$(Build.SourcesDirectory)/order.log" -RedirectStandardError "$(Build.SourcesDirectory)/order_err.log"
 
-        Set-Location "$(Build.SourcesDirectory)/src/OrderWeb.Mvc"
-        Start-Process powershell -ArgumentList "-Command `"dotnet run --urls=http://127.0.0.1:5002`"" -RedirectStandardOutput "$(Build.SourcesDirectory)/web.log" -RedirectStandardError "$(Build.SourcesDirectory)/web_err.log"
+        $webArgs = "run --project src/OrderWeb.Mvc/OrderWeb.Mvc.csproj --configuration $(buildConfiguration) --no-build --urls=http://127.0.0.1:5002"
+        Start-Process dotnet -ArgumentList $webArgs -RedirectStandardOutput "$(Build.SourcesDirectory)/web.log" -RedirectStandardError "$(Build.SourcesDirectory)/web_err.log"
 
-        Write-Host "Waiting 45 seconds for services to start..."
-        Start-Sleep -Seconds 45
+        Write-Host "Waiting 60 seconds for services to start..."
+        Start-Sleep -Seconds 60
       displayName: 'Start Microservices (Playwright)'
 
     - pwsh: |
@@ -132,6 +136,9 @@ stages:
         npm ci
       displayName: 'Install Cypress Dependencies'
 
+    - script: dotnet build E2Etesting.sln --configuration $(buildConfiguration)
+      displayName: 'Build Solution (Prepare for Cypress)'
+
     - pwsh: |
         Write-Host "Starting Microservices for Cypress..."
         $env:ASPNETCORE_ENVIRONMENT = "Development"
@@ -140,16 +147,16 @@ stages:
         netstat -ano | findstr :5001 | for /f "tokens=5" %a in ('more') do taskkill /PID %a /F 2>$null
         netstat -ano | findstr :5002 | for /f "tokens=5" %a in ('more') do taskkill /PID %a /F 2>$null
 
-        Set-Location "$(Build.SourcesDirectory)/src/InventoryService.Api"
-        Start-Process powershell -ArgumentList "-Command `"dotnet run --urls=http://127.0.0.1:5001`"" -RedirectStandardOutput "$(Build.SourcesDirectory)/inventory.log" -RedirectStandardError "$(Build.SourcesDirectory)/inventory_err.log"
+        $invArgs = "run --project src/InventoryService.Api/InventoryService.Api.csproj --configuration $(buildConfiguration) --no-build --urls=http://127.0.0.1:5001"
+        Start-Process dotnet -ArgumentList $invArgs -RedirectStandardOutput "$(Build.SourcesDirectory)/inventory.log" -RedirectStandardError "$(Build.SourcesDirectory)/inventory_err.log"
 
-        Set-Location "$(Build.SourcesDirectory)/src/OrderService.Api"
-        Start-Process powershell -ArgumentList "-Command `"dotnet run --urls=http://127.0.0.1:5000`"" -RedirectStandardOutput "$(Build.SourcesDirectory)/order.log" -RedirectStandardError "$(Build.SourcesDirectory)/order_err.log"
+        $ordArgs = "run --project src/OrderService.Api/OrderService.Api.csproj --configuration $(buildConfiguration) --no-build --urls=http://127.0.0.1:5000"
+        Start-Process dotnet -ArgumentList $ordArgs -RedirectStandardOutput "$(Build.SourcesDirectory)/order.log" -RedirectStandardError "$(Build.SourcesDirectory)/order_err.log"
 
-        Set-Location "$(Build.SourcesDirectory)/src/OrderWeb.Mvc"
-        Start-Process powershell -ArgumentList "-Command `"dotnet run --urls=http://127.0.0.1:5002`"" -RedirectStandardOutput "$(Build.SourcesDirectory)/web.log" -RedirectStandardError "$(Build.SourcesDirectory)/web_err.log"
+        $webArgs = "run --project src/OrderWeb.Mvc/OrderWeb.Mvc.csproj --configuration $(buildConfiguration) --no-build --urls=http://127.0.0.1:5002"
+        Start-Process dotnet -ArgumentList $webArgs -RedirectStandardOutput "$(Build.SourcesDirectory)/web.log" -RedirectStandardError "$(Build.SourcesDirectory)/web_err.log"
 
-        Start-Sleep -Seconds 45
+        Start-Sleep -Seconds 60
       displayName: 'Start Microservices (Cypress)'
 
     - script: |
@@ -183,6 +190,9 @@ stages:
         packageType: 'sdk'
         version: '8.x'
 
+    - script: dotnet build E2Etesting.sln --configuration $(buildConfiguration)
+      displayName: 'Build Solution (Prepare for Selenium)'
+
     - pwsh: |
         Write-Host "Starting Microservices for Selenium (robust startup)..."
         $env:ASPNETCORE_ENVIRONMENT = "Development"
@@ -193,19 +203,19 @@ stages:
         netstat -ano | findstr :5002 | for /f "tokens=5" %a in ('more') do taskkill /PID %a /F 2>$null
 
         # Start services detached with full logging
-        Set-Location "$(Build.SourcesDirectory)/src/InventoryService.Api"
-        Start-Process powershell -ArgumentList "-Command `"dotnet run --urls=http://127.0.0.1:5001`"" -RedirectStandardOutput "$(Build.SourcesDirectory)/inventory.log" -RedirectStandardError "$(Build.SourcesDirectory)/inventory_err.log"
+        $invArgs = "run --project src/InventoryService.Api/InventoryService.Api.csproj --configuration $(buildConfiguration) --no-build --urls=http://127.0.0.1:5001"
+        Start-Process dotnet -ArgumentList $invArgs -RedirectStandardOutput "$(Build.SourcesDirectory)/inventory.log" -RedirectStandardError "$(Build.SourcesDirectory)/inventory_err.log"
 
-        Set-Location "$(Build.SourcesDirectory)/src/OrderService.Api"
-        Start-Process powershell -ArgumentList "-Command `"dotnet run --urls=http://127.0.0.1:5000`"" -RedirectStandardOutput "$(Build.SourcesDirectory)/order.log" -RedirectStandardError "$(Build.SourcesDirectory)/order_err.log"
+        $ordArgs = "run --project src/OrderService.Api/OrderService.Api.csproj --configuration $(buildConfiguration) --no-build --urls=http://127.0.0.1:5000"
+        Start-Process dotnet -ArgumentList $ordArgs -RedirectStandardOutput "$(Build.SourcesDirectory)/order.log" -RedirectStandardError "$(Build.SourcesDirectory)/order_err.log"
 
-        Set-Location "$(Build.SourcesDirectory)/src/OrderWeb.Mvc"
-        Start-Process powershell -ArgumentList "-Command `"dotnet run --urls=http://127.0.0.1:5002`"" -RedirectStandardOutput "$(Build.SourcesDirectory)/web.log" -RedirectStandardError "$(Build.SourcesDirectory)/web_err.log"
+        $webArgs = "run --project src/OrderWeb.Mvc/OrderWeb.Mvc.csproj --configuration $(buildConfiguration) --no-build --urls=http://127.0.0.1:5002"
+        Start-Process dotnet -ArgumentList $webArgs -RedirectStandardOutput "$(Build.SourcesDirectory)/web.log" -RedirectStandardError "$(Build.SourcesDirectory)/web_err.log"
 
-        Write-Host "Waiting 45 seconds for services to fully start..."
-        Start-Sleep -Seconds 45
-
-        # Health check
+        Write-Host "Waiting 60 seconds for services to fully start..."
+        Start-Sleep -Seconds 60
+      displayName: 'Start Microservices (Selenium)'
+    - pwsh: |
         $allGood = $true
         try { Invoke-WebRequest http://127.0.0.1:5002 -TimeoutSec 10 | Out-Null; Write-Host "Web app (5002) OK" } catch { Write-Warning "Web app FAILED: $_"; $allGood = $false }
         try { Invoke-WebRequest http://127.0.0.1:5000/swagger/index.html -TimeoutSec 10 | Out-Null; Write-Host "Order API (5000) OK" } catch { Write-Warning "Order API FAILED: $_"; $allGood = $false }
