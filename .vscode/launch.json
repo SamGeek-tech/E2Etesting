@@ -1,0 +1,35 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+      {
+        "name": "Inventory API (.NET 8)",
+        "type": "dotnet",
+        "request": "launch",
+        "projectPath": "${workspaceFolder}/src/InventoryService.Api/InventoryService.Api.csproj"
+      },
+      {
+        "name": "Order API (.NET 8)",
+        "type": "dotnet",
+        "request": "launch",
+        "projectPath": "${workspaceFolder}/src/OrderService.Api/OrderService.Api.csproj"
+      },
+      {
+        "name": "WebApp (.NET 8)",
+        "type": "dotnet",
+        "request": "launch",
+        "projectPath": "${workspaceFolder}/src/OrderWeb.Mvc/OrderWeb.Mvc.csproj"
+      }
+    ],
+    "compounds": [
+      {
+        "name": "Launch All (.NET 8)",
+        "configurations": [
+          "Inventory API (.NET 8)",
+          "Order API (.NET 8)",
+          "WebApp (.NET 8)"
+        ],
+        "stopAll": true
+      }
+    ]
+  }
+  

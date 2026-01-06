@@ -1,0 +1,70 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+      {
+        "label": "build Inventory API",
+        "type": "shell",
+        "command": "dotnet build ${workspaceFolder}/src/InventoryService.Api/InventoryService.Api.csproj",
+        "problemMatcher": "$msCompile",
+        "group": {
+          "kind": "build",
+          "isDefault": true
+        }
+      },
+      {
+        "label": "build Order API",
+        "type": "shell",
+        "command": "dotnet build ${workspaceFolder}/src/OrderService.Api/OrderService.Api.csproj",
+        "problemMatcher": "$msCompile",
+        "group": {
+          "kind": "build"
+        }
+      },
+      {
+        "label": "build WebApp",
+        "type": "shell",
+        "command": "dotnet build ${workspaceFolder}/src/OrderWeb.Mvc/OrderWeb.Mvc.csproj",
+        "problemMatcher": "$msCompile",
+        "group": {
+          "kind": "build"
+        }
+    },
+    {
+        "label": "build",
+        "command": "dotnet",
+        "type": "process",
+        "args": [
+            "build",
+            "${workspaceFolder}/E2Etesting.sln",
+            "/property:GenerateFullPaths=true",
+            "/consoleloggerparameters:NoSummary;ForceNoAlign"
+        ],
+        "problemMatcher": "$msCompile"
+    },
+    {
+        "label": "publish",
+        "command": "dotnet",
+        "type": "process",
+        "args": [
+            "publish",
+            "${workspaceFolder}/E2Etesting.sln",
+            "/property:GenerateFullPaths=true",
+            "/consoleloggerparameters:NoSummary;ForceNoAlign"
+        ],
+        "problemMatcher": "$msCompile"
+    },
+    {
+        "label": "watch",
+        "command": "dotnet",
+        "type": "process",
+        "args": [
+            "watch",
+            "run",
+            "--project",
+            "${workspaceFolder}/E2Etesting.sln"
+        ],
+        "problemMatcher": "$msCompile"
+    }
+    ]
+  }
+  
