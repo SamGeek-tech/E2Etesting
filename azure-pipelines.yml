@@ -55,11 +55,21 @@ stages:
         packageType: 'sdk'
         version: '8.x'
 
+    - pwsh: |
+        $scriptPath = "tests/E2E.Tests/bin/$(buildConfiguration)/net8.0/playwright.ps1"
+        if (Test-Path $scriptPath) {
+          pwsh -ExecutionPolicy Bypass -File $scriptPath install --with-deps chromium
+        } else {
+          dotnet tool install --global Microsoft.Playwright.CLI
+          playwright install --with-deps chromium
+        }
+      displayName: 'Install Playwright Browsers'
+
     - script: dotnet build tests/E2E.Tests/E2E.Tests.csproj --configuration $(buildConfiguration) --no-restore
       displayName: 'Build Playwright E2E Project'
       workingDirectory: '$(Build.SourcesDirectory)'
 
-    - script: |
+    - pwsh: |
         Write-Host "Starting Microservices (detached)..."
         $env:ASPNETCORE_ENVIRONMENT = "Development"
 
@@ -91,6 +101,7 @@ stages:
       workingDirectory: '$(Build.SourcesDirectory)'
       continueOnError: true
       env:
+        PLAYWRIGHT_BROWSERS_PATH: '0'
         DEBUG: 'pw:*'
 
     - task: PublishTestResults@2
@@ -99,6 +110,7 @@ stages:
         testResultsFormat: 'VSTest'
         testResultsFiles: '**/playwright_results.trx'
         failTaskOnFailedTests: true
+      displayName: 'Publish Playwright Test Results'
 
     - task: PublishBuildArtifacts@1
       condition: always()
@@ -113,13 +125,14 @@ stages:
     - task: NodeTool@0
       inputs:
         versionSpec: '20.x'
+      displayName: 'Install Node.js'
 
     - script: |
         cd tests/Cypress.Tests
         npm ci
       displayName: 'Install Cypress Dependencies'
 
-    - script: |
+    - pwsh: |
         Write-Host "Starting Microservices for Cypress..."
         $env:ASPNETCORE_ENVIRONMENT = "Development"
 
@@ -152,6 +165,14 @@ stages:
         testResultsFormat: 'JUnit'
         testResultsFiles: 'tests/Cypress.Tests/cypress/results/*.xml'
         failTaskOnFailedTests: true
+      displayName: 'Publish Cypress Test Results'
+
+    - task: PublishBuildArtifacts@1
+      condition: always()
+      inputs:
+        PathtoPublish: 'tests/Cypress.Tests/cypress/videos'
+        ArtifactName: 'cypress-videos'
+      displayName: 'Publish Cypress Videos'
 
   # ==================== SELENIUM E2E ====================
   - job: Selenium_Test_Job
@@ -162,7 +183,7 @@ stages:
         packageType: 'sdk'
         version: '8.x'
 
-    - script: |
+    - pwsh: |
         Write-Host "Starting Microservices for Selenium (robust startup)..."
         $env:ASPNETCORE_ENVIRONMENT = "Development"
 
@@ -196,7 +217,7 @@ stages:
         }
       displayName: 'Start Microservices (Selenium)'
 
-    - script: |
+    - pwsh: |
         dotnet test tests/Selenium.Tests/Selenium.Tests.csproj `
           --configuration $(buildConfiguration) `
           --no-build `
@@ -215,7 +236,7 @@ stages:
       displayName: 'Publish Selenium Test Results'
 
     # Critical: This will show you the real reason if the app crashes
-    - script: |
+    - pwsh: |
         Write-Host "=== DUMPING SERVICE LOGS (Selenium Job) ==="
         Write-Host "`n--- Web App (5002) STDOUT ---"
         Get-Content "$(Build.SourcesDirectory)/web.log" -Tail 100 -ErrorAction SilentlyContinue || Write-Host "No log"
