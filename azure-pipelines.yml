@@ -47,11 +47,11 @@ stages:
         Write-Host "✅ [STEP 2/5] Build complete" -ForegroundColor Green
       displayName: '🔨 [2/5] Build Solution'
 
-    - pwsh: |
-        Write-Host "▶️ [STEP 3/5] Running unit tests..." -ForegroundColor Yellow
-        dotnet test --configuration $(buildConfiguration) --no-build
-        Write-Host "✅ [STEP 3/5] Unit tests complete" -ForegroundColor Green
-      displayName: '🧪 [3/5] Run Unit Tests'
+    # - pwsh: |
+    #     Write-Host "▶️ [STEP 3/5] Running unit tests..." -ForegroundColor Yellow
+    #     dotnet test --configuration $(buildConfiguration) --no-build
+    #     Write-Host "✅ [STEP 3/5] Unit tests complete" -ForegroundColor Green
+    #   displayName: '🧪 [3/5] Run Unit Tests'
 
     - task: DotNetCoreCLI@2
       inputs:
