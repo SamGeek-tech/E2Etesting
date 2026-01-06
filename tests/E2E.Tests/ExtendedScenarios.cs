@@ -9,7 +9,7 @@ namespace E2E.Tests;
 [TestFixture]
 public class ExtendedScenarios : PageTest
 {
-    private string _baseUrl = "http://localhost:5002";
+    private string _baseUrl = "http://127.0.0.1:5002";
 
     [SetUp]
     public async Task Setup()

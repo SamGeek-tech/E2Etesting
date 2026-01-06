@@ -9,7 +9,7 @@ namespace Selenium.Tests;
 public class OrderFlowTests
 {
     private IWebDriver _driver;
-    private string _baseUrl = "http://localhost:5002";
+    private string _baseUrl = "http://127.0.0.1:5002";
     private LoginPage _loginPage;
     private ShopPage _shopPage;
     private OrdersPage _ordersPage;

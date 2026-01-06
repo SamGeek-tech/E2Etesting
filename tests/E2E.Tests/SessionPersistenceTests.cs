@@ -9,7 +9,7 @@ namespace E2E.Tests;
 [TestFixture]
 public class SessionPersistenceTests : PageTest
 {
-    private string _baseUrl = "http://localhost:5002";
+    private string _baseUrl = "http://127.0.0.1:5002";
 
     [Test]
     public async Task Scenario10_OrderPersistenceAcrossSessions()

@@ -8,7 +8,7 @@ namespace E2E.Tests;
 [TestFixture]
 public class TestOrderFlow : PageTest
 {
-    private string _baseUrl = "http://localhost:5002"; // MVC App Port
+    private string _baseUrl = "http://127.0.0.1:5002"; // MVC App Port
 
     [Test]
     public async Task FullUserJourney_PlaceOrder_VerifyHistory()
