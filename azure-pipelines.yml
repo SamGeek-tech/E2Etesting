@@ -241,28 +241,40 @@ stages:
         path: '$(Build.SourcesDirectory)'
       displayName: '⚡ Download Built Source'
 
-    # ⚡ CACHE: npm packages
+    # ⚡ CACHE: npm node_modules (faster than npm cache)
     - task: Cache@2
       inputs:
-        key: 'npm | "$(Agent.OS)" | tests/PlaywrightNode.Tests/package-lock.json'
-        restoreKeys: |
-          npm | "$(Agent.OS)"
-        path: $(npm_config_cache)
-      displayName: '⚡ Cache npm packages'
+        key: 'node-modules-pw | "$(Agent.OS)" | tests/PlaywrightNode.Tests/package-lock.json'
+        path: tests/PlaywrightNode.Tests/node_modules
+      displayName: '⚡ Cache node_modules'
 
     # ⚡ CACHE: Playwright browsers (Node)
     - task: Cache@2
       inputs:
-        key: 'playwright-node | "$(Agent.OS)" | tests/PlaywrightNode.Tests/package-lock.json'
+        key: 'playwright-browsers | "$(Agent.OS)" | tests/PlaywrightNode.Tests/package-lock.json'
         path: $(PLAYWRIGHT_BROWSERS_PATH)
+        cacheHitVar: PLAYWRIGHT_CACHE_HIT
       displayName: '⚡ Cache Playwright Browsers'
 
     - pwsh: |
         Push-Location tests/PlaywrightNode.Tests
-        npm ci
-        npx playwright install --with-deps chromium
+        # Only run npm ci if node_modules doesn't have playwright
+        if (-not (Test-Path "node_modules/@playwright/test")) {
+          Write-Host "Installing npm packages..."
+          npm ci --prefer-offline
+        } else {
+          Write-Host "✅ npm packages already cached"
+        }
         Pop-Location
-      displayName: '📦 Install Dependencies & Browsers'
+      displayName: '📦 Install npm packages'
+
+    - pwsh: |
+        Write-Host "Installing Playwright browsers..."
+        Push-Location tests/PlaywrightNode.Tests
+        npx playwright install chromium
+        Pop-Location
+      displayName: '🌐 Install Playwright Browsers'
+      condition: ne(variables.PLAYWRIGHT_CACHE_HIT, 'true')
       env:
         PLAYWRIGHT_BROWSERS_PATH: $(PLAYWRIGHT_BROWSERS_PATH)
 
@@ -365,25 +377,29 @@ stages:
         path: '$(Build.SourcesDirectory)'
       displayName: '⚡ Download Built Source'
 
-    # ⚡ CACHE: npm packages for Cypress
+    # ⚡ CACHE: Cypress node_modules
     - task: Cache@2
       inputs:
-        key: 'npm-cypress | "$(Agent.OS)" | tests/Cypress.Tests/package-lock.json'
-        restoreKeys: |
-          npm-cypress | "$(Agent.OS)"
-        path: $(npm_config_cache)
-      displayName: '⚡ Cache npm packages'
+        key: 'node-modules-cy | "$(Agent.OS)" | tests/Cypress.Tests/package-lock.json'
+        path: tests/Cypress.Tests/node_modules
+      displayName: '⚡ Cache node_modules'
 
     # ⚡ CACHE: Cypress binary
     - task: Cache@2
       inputs:
         key: 'cypress-binary | "$(Agent.OS)" | tests/Cypress.Tests/package-lock.json'
         path: $(Pipeline.Workspace)/.cypress-cache
+        cacheHitVar: CYPRESS_CACHE_HIT
       displayName: '⚡ Cache Cypress Binary'
 
     - pwsh: |
         Push-Location tests/Cypress.Tests
-        npm ci
+        if (-not (Test-Path "node_modules/cypress")) {
+          Write-Host "Installing Cypress packages..."
+          npm ci
+        } else {
+          Write-Host "✅ Cypress packages already cached"
+        }
         Pop-Location
       displayName: '📦 Install Cypress'
       env:
