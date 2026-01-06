@@ -159,13 +159,12 @@ test.describe('Order Flow Journey (Playwright Node.js Comparison)', () => {
         await page.goto('/Orders');
         const initialCount = await page.locator('.order-item').count();
 
-        // Close page, open new one
-        await page.close();
-        const newPage = await context.newPage();
-        await newPage.goto('/Orders');
-        // Session should still be active if cookies persist, or we might need to login again
-        // For simplicity, let's just check if we can see orders after a fresh navigation
-        const finalCount = await newPage.locator('.order-item').count();
+        // Navigate away and back to verify orders persist
+        await page.goto('/');
+        await page.goto('/Orders');
+        
+        // Orders should persist within the same session
+        const finalCount = await page.locator('.order-item').count();
         expect(finalCount).toBe(initialCount);
     });
 });

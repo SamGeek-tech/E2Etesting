@@ -16,4 +16,7 @@ module.exports = defineConfig({
     video: true,
     screenshotOnRunFailure: true,
   },
+  env: {
+    INVENTORY_URL: 'http://127.0.0.1:5001',
+  },
 });
