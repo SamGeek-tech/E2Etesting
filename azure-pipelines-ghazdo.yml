@@ -27,40 +27,40 @@ stages:
   - job: BuildJob
     displayName: 'Build Solution'
     steps:
-    - pwsh: |
-        Write-Host "=========================================="
-        Write-Host "🚀 PULL REQUEST CODE VALIDATION"
-        Write-Host "=========================================="
-        Write-Host "Build ID: $(Build.BuildId)"
-        Write-Host "Build Number: $(Build.BuildNumber)"
-        Write-Host "Source Branch: $(Build.SourceBranch)"
-        Write-Host "Source Branch Name: $(Build.SourceBranchName)"
+    # - pwsh: |
+    #     Write-Host "=========================================="
+    #     Write-Host "🚀 PULL REQUEST CODE VALIDATION"
+    #     Write-Host "=========================================="
+    #     Write-Host "Build ID: $(Build.BuildId)"
+    #     Write-Host "Build Number: $(Build.BuildNumber)"
+    #     Write-Host "Source Branch: $(Build.SourceBranch)"
+    #     Write-Host "Source Branch Name: $(Build.SourceBranchName)"
         
-        # Check for PR variables (available only in PR builds)
-        # Use environment variables only - these are set by Azure DevOps for PR builds
-        $prNumber = $env:SYSTEM_PULLREQUEST_PULLREQUESTNUMBER
-        $prSourceBranch = $env:SYSTEM_PULLREQUEST_SOURCEBRANCH
-        $prTargetBranch = $env:SYSTEM_PULLREQUEST_TARGETBRANCH
+    #     # Check for PR variables (available only in PR builds)
+    #     # Use environment variables only - these are set by Azure DevOps for PR builds
+    #     $prNumber = $env:SYSTEM_PULLREQUEST_PULLREQUESTNUMBER
+    #     $prSourceBranch = $env:SYSTEM_PULLREQUEST_SOURCEBRANCH
+    #     $prTargetBranch = $env:SYSTEM_PULLREQUEST_TARGETBRANCH
         
-        if ($prNumber -and $prNumber -ne "") {
-          Write-Host "PR Number: $prNumber"
-          if ($prSourceBranch -and $prSourceBranch -ne "") {
-            Write-Host "PR Source Branch: $prSourceBranch"
-          }
-          if ($prTargetBranch -and $prTargetBranch -ne "") {
-            Write-Host "PR Target Branch: $prTargetBranch"
-          }
-        } else {
-          Write-Host "PR Number: Not available (may be triggered manually or on push)"
-        }
+    #     if ($prNumber -and $prNumber -ne "") {
+    #       Write-Host "PR Number: $prNumber"
+    #       if ($prSourceBranch -and $prSourceBranch -ne "") {
+    #         Write-Host "PR Source Branch: $prSourceBranch"
+    #       }
+    #       if ($prTargetBranch -and $prTargetBranch -ne "") {
+    #         Write-Host "PR Target Branch: $prTargetBranch"
+    #       }
+    #     } else {
+    #       Write-Host "PR Number: Not available (may be triggered manually or on push)"
+    #     }
         
-        Write-Host "Build Reason: $(Build.Reason)"
-        Write-Host "Configuration: $(buildConfiguration)"
-        Write-Host "Azure DevOps Organization: $(System.TeamFoundationCollectionUri)"
-        Write-Host "Azure DevOps Project: $(System.TeamProject)"
-        Write-Host "Repository: $(Build.Repository.Name)"
-        Write-Host "=========================================="
-      displayName: '📋 PR Information'
+    #     Write-Host "Build Reason: $(Build.Reason)"
+    #     Write-Host "Configuration: $(buildConfiguration)"
+    #     Write-Host "Azure DevOps Organization: $(System.TeamFoundationCollectionUri)"
+    #     Write-Host "Azure DevOps Project: $(System.TeamProject)"
+    #     Write-Host "Repository: $(Build.Repository.Name)"
+    #     Write-Host "=========================================="
+    #   displayName: '📋 PR Information'
 
     - task: UseDotNet@2
       inputs:
