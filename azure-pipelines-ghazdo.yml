@@ -35,13 +35,29 @@ stages:
         Write-Host "Build Number: $(Build.BuildNumber)"
         Write-Host "Source Branch: $(Build.SourceBranch)"
         Write-Host "Source Branch Name: $(Build.SourceBranchName)"
-        if ("$(System.PullRequest.PullRequestNumber)" -ne "") {
-          Write-Host "PR Number: $(System.PullRequest.PullRequestNumber)"
-          Write-Host "Target Branch: $(System.PullRequest.TargetBranch)"
-          Write-Host "Source Branch (PR): $(System.PullRequest.SourceBranch)"
-        } else {
-          Write-Host "PR Number: Not available (may be triggered manually)"
+        
+        # Check for PR variables (available only in PR builds)
+        $prNumber = "$(System.PullRequest.PullRequestNumber)"
+        $prSourceBranch = "$(System.PullRequest.SourceBranch)"
+        
+        # Get target branch from environment variable (System.PullRequest.TargetBranch is not a valid predefined variable)
+        $prTargetBranch = $env:SYSTEM_PULLREQUEST_TARGETBRANCH
+        if (-not $prTargetBranch) {
+          $prTargetBranch = ""
         }
+        
+        if ($prNumber -and $prNumber -ne "") {
+          Write-Host "PR Number: $prNumber"
+          if ($prSourceBranch -and $prSourceBranch -ne "") {
+            Write-Host "PR Source Branch: $prSourceBranch"
+          }
+          if ($prTargetBranch -and $prTargetBranch -ne "") {
+            Write-Host "PR Target Branch: $prTargetBranch"
+          }
+        } else {
+          Write-Host "PR Number: Not available (may be triggered manually or on push)"
+        }
+        
         Write-Host "Build Reason: $(Build.Reason)"
         Write-Host "Configuration: $(buildConfiguration)"
         Write-Host "Azure DevOps Organization: $(System.TeamFoundationCollectionUri)"
@@ -170,9 +186,21 @@ stages:
         Write-Host "✓ Code structure validated"
         Write-Host "✓ Ready for Azure DevOps review"
         Write-Host "=========================================="
-        if ("$(System.PullRequest.PullRequestNumber)" -ne "") {
-          Write-Host "Azure DevOps PR: $(System.PullRequest.PullRequestNumber)"
-          Write-Host "Branch: $(Build.SourceBranchName) -> $(System.PullRequest.TargetBranch)"
+        
+        $prNumber = "$(System.PullRequest.PullRequestNumber)"
+        # Get target branch from environment variable (System.PullRequest.TargetBranch is not a valid predefined variable)
+        $prTargetBranch = $env:SYSTEM_PULLREQUEST_TARGETBRANCH
+        if (-not $prTargetBranch) {
+          $prTargetBranch = ""
+        }
+        
+        if ($prNumber -and $prNumber -ne "") {
+          Write-Host "Azure DevOps PR: $prNumber"
+          if ($prTargetBranch) {
+            Write-Host "Branch: $(Build.SourceBranchName) -> $prTargetBranch"
+          } else {
+            Write-Host "Source Branch: $(Build.SourceBranchName)"
+          }
         } else {
           Write-Host "Source Branch: $(Build.SourceBranchName)"
         }
