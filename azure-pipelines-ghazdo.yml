@@ -87,13 +87,13 @@ stages:
         dotnet build --configuration $(buildConfiguration) --no-restore
       displayName: '🔨 Build Solution'
 
-    - pwsh: |
-        if ($LASTEXITCODE -ne 0) {
-          Write-Host "❌ Build failed!"
-          exit 1
-        }
-        Write-Host "✅ Build succeeded"
-      displayName: '✅ Verify Build'
+    # - pwsh: |
+    #     if ($LASTEXITCODE -ne 0) {
+    #       Write-Host "❌ Build failed!"
+    #       exit 1
+    #     }
+    #     Write-Host "✅ Build succeeded"
+    #   displayName: '✅ Verify Build'
 
 - stage: CodeQuality
   displayName: '🔍 Code Quality Checks (Azure DevOps)'
