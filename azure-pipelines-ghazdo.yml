@@ -1,0 +1,172 @@
+# Pipeline that triggers on Pull Request creation
+# Runs code quality checks against Azure DevOps (no test execution)
+
+trigger: none  # Don't trigger on push, only on PR
+
+pr:
+  branches:
+    include:
+    - '*'  # Trigger on PRs to any branch
+  paths:
+    exclude:
+    - README.md
+    - '*.md'
+    - 'docs/**'
+
+pool:
+  vmImage: 'windows-latest'
+
+variables:
+  buildConfiguration: 'Release'
+  NUGET_PACKAGES: $(Pipeline.Workspace)/.nuget/packages
+
+stages:
+- stage: Build
+  displayName: '🔨 Build & Validate'
+  jobs:
+  - job: BuildJob
+    displayName: 'Build Solution'
+    steps:
+    - pwsh: |
+        Write-Host "=========================================="
+        Write-Host "🚀 PULL REQUEST CODE VALIDATION"
+        Write-Host "=========================================="
+        Write-Host "Build ID: $(Build.BuildId)"
+        Write-Host "Build Number: $(Build.BuildNumber)"
+        Write-Host "Source Branch: $(Build.SourceBranch)"
+        Write-Host "Source Branch Name: $(Build.SourceBranchName)"
+        Write-Host "Target Branch: $(System.PullRequest.TargetBranch)"
+        Write-Host "PR Number: $(System.PullRequest.PullRequestNumber)"
+        Write-Host "PR Title: $(System.PullRequest.Title)"
+        Write-Host "Build Reason: $(Build.Reason)"
+        Write-Host "Configuration: $(buildConfiguration)"
+        Write-Host "Azure DevOps Organization: $(System.TeamFoundationCollectionUri)"
+        Write-Host "Azure DevOps Project: $(System.TeamProject)"
+        Write-Host "=========================================="
+      displayName: '📋 PR Information'
+
+    - task: UseDotNet@2
+      inputs:
+        packageType: 'sdk'
+        version: '8.x'
+      displayName: '⚙️ Setup .NET 8 SDK'
+
+    # ⚡ CACHE: NuGet packages
+    - task: Cache@2
+      inputs:
+        key: 'nuget | "$(Agent.OS)" | **/*.csproj'
+        restoreKeys: |
+          nuget | "$(Agent.OS)"
+        path: $(NUGET_PACKAGES)
+      displayName: '⚡ Cache NuGet packages'
+
+    - pwsh: |
+        Write-Host "📦 Restoring dependencies..."
+        dotnet restore --verbosity minimal
+      displayName: '📦 Restore Dependencies'
+
+    - pwsh: |
+        Write-Host "🔨 Building solution..."
+        dotnet build --configuration $(buildConfiguration) --no-restore
+      displayName: '🔨 Build Solution'
+
+    - pwsh: |
+        if ($LASTEXITCODE -ne 0) {
+          Write-Host "❌ Build failed!"
+          exit 1
+        }
+        Write-Host "✅ Build succeeded"
+      displayName: '✅ Verify Build'
+
+- stage: CodeQuality
+  displayName: '🔍 Code Quality Checks (Azure DevOps)'
+  dependsOn: Build
+  condition: succeeded()
+  jobs:
+  - job: CodeQuality_Job
+    displayName: 'Code Quality Validation'
+    steps:
+    - task: UseDotNet@2
+      inputs:
+        packageType: 'sdk'
+        version: '8.x'
+      displayName: '⚙️ Setup .NET SDK'
+
+    - pwsh: |
+        Write-Host "=========================================="
+        Write-Host "🔍 CODE QUALITY CHECKS - AZURE DEVOPS"
+        Write-Host "=========================================="
+        Write-Host "Running code validation against Azure DevOps..."
+        Write-Host "Organization: $(System.TeamFoundationCollectionUri)"
+        Write-Host "Project: $(System.TeamProject)"
+        Write-Host "Repository: $(Build.Repository.Name)"
+        Write-Host "=========================================="
+      displayName: '📋 Code Quality Info'
+
+    # Check for build warnings
+    - pwsh: |
+        Write-Host "🔨 Analyzing build output for warnings and errors..."
+        $buildOutput = dotnet build --configuration $(buildConfiguration) --verbosity normal 2>&1
+        $warnings = $buildOutput | Select-String -Pattern "warning"
+        $errors = $buildOutput | Select-String -Pattern "error"
+        
+        if ($errors) {
+          Write-Host "❌ Build errors found:"
+          $errors | ForEach-Object { Write-Host "  $_" }
+          Write-Host "Please fix errors before merging."
+          exit 1
+        }
+        
+        if ($warnings) {
+          Write-Host "⚠️ Build warnings found:"
+          $warnings | ForEach-Object { Write-Host "  $_" }
+          Write-Host "Please review and fix warnings if possible."
+        } else {
+          Write-Host "✅ No build warnings found"
+        }
+      displayName: '🔍 Check Build Warnings & Errors'
+
+    # Code analysis - check for common issues
+    - pwsh: |
+        Write-Host "📊 Running code analysis..."
+        
+        # Check for project structure
+        $projects = Get-ChildItem -Path . -Filter "*.csproj" -Recurse | Where-Object { $_.FullName -notlike "*\bin\*" -and $_.FullName -notlike "*\obj\*" }
+        Write-Host "Found $($projects.Count) project file(s)"
+        
+        # Check for solution file
+        $solutions = Get-ChildItem -Path . -Filter "*.sln" -Recurse
+        if ($solutions) {
+          Write-Host "✅ Solution file(s) found: $($solutions.Name -join ', ')"
+        } else {
+          Write-Host "⚠️ No solution file found"
+        }
+        
+        # Check for test projects (informational only)
+        $testProjects = $projects | Where-Object { $_.FullName -like "*Test*" -or $_.FullName -like "*test*" }
+        if ($testProjects) {
+          Write-Host "ℹ️ Found $($testProjects.Count) test project(s) (not executing)"
+        }
+      displayName: '📊 Code Structure Analysis'
+
+    # Validate code compiles
+    - pwsh: |
+        Write-Host "✅ Code compilation verified (passed in Build stage)"
+        Write-Host "✅ All projects compile successfully"
+      displayName: '✅ Compilation Validation'
+
+    # Summary
+    - pwsh: |
+        Write-Host "=========================================="
+        Write-Host "✅ CODE QUALITY VALIDATION COMPLETE"
+        Write-Host "=========================================="
+        Write-Host "✓ Code compiles successfully"
+        Write-Host "✓ Build warnings/errors checked"
+        Write-Host "✓ Code structure validated"
+        Write-Host "✓ Ready for Azure DevOps review"
+        Write-Host "=========================================="
+        Write-Host "Azure DevOps PR: $(System.PullRequest.PullRequestNumber)"
+        Write-Host "Branch: $(Build.SourceBranchName) -> $(System.PullRequest.TargetBranch)"
+        Write-Host "=========================================="
+      displayName: '📋 Quality Check Summary'
+
