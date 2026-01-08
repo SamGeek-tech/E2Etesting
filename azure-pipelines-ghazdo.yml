@@ -35,13 +35,18 @@ stages:
         Write-Host "Build Number: $(Build.BuildNumber)"
         Write-Host "Source Branch: $(Build.SourceBranch)"
         Write-Host "Source Branch Name: $(Build.SourceBranchName)"
-        Write-Host "Target Branch: $(System.PullRequest.TargetBranch)"
-        Write-Host "PR Number: $(System.PullRequest.PullRequestNumber)"
-        Write-Host "PR Title: $(System.PullRequest.Title)"
+        if ("$(System.PullRequest.PullRequestNumber)" -ne "") {
+          Write-Host "PR Number: $(System.PullRequest.PullRequestNumber)"
+          Write-Host "Target Branch: $(System.PullRequest.TargetBranch)"
+          Write-Host "Source Branch (PR): $(System.PullRequest.SourceBranch)"
+        } else {
+          Write-Host "PR Number: Not available (may be triggered manually)"
+        }
         Write-Host "Build Reason: $(Build.Reason)"
         Write-Host "Configuration: $(buildConfiguration)"
         Write-Host "Azure DevOps Organization: $(System.TeamFoundationCollectionUri)"
         Write-Host "Azure DevOps Project: $(System.TeamProject)"
+        Write-Host "Repository: $(Build.Repository.Name)"
         Write-Host "=========================================="
       displayName: '📋 PR Information'
 
@@ -165,8 +170,12 @@ stages:
         Write-Host "✓ Code structure validated"
         Write-Host "✓ Ready for Azure DevOps review"
         Write-Host "=========================================="
-        Write-Host "Azure DevOps PR: $(System.PullRequest.PullRequestNumber)"
-        Write-Host "Branch: $(Build.SourceBranchName) -> $(System.PullRequest.TargetBranch)"
+        if ("$(System.PullRequest.PullRequestNumber)" -ne "") {
+          Write-Host "Azure DevOps PR: $(System.PullRequest.PullRequestNumber)"
+          Write-Host "Branch: $(Build.SourceBranchName) -> $(System.PullRequest.TargetBranch)"
+        } else {
+          Write-Host "Source Branch: $(Build.SourceBranchName)"
+        }
         Write-Host "=========================================="
       displayName: '📋 Quality Check Summary'
 
