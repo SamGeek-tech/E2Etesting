@@ -37,22 +37,14 @@ stages:
         Write-Host "Source Branch Name: $(Build.SourceBranchName)"
         
         # Check for PR variables (available only in PR builds)
-        # Use environment variables to avoid YAML variable expansion issues
+        # Use environment variables only - these are set by Azure DevOps for PR builds
         $prNumber = $env:SYSTEM_PULLREQUEST_PULLREQUESTNUMBER
         $prSourceBranch = $env:SYSTEM_PULLREQUEST_SOURCEBRANCH
         $prTargetBranch = $env:SYSTEM_PULLREQUEST_TARGETBRANCH
         
-        # Fallback to YAML variables if environment variables are not available
-        if (-not $prNumber -or $prNumber -eq "") {
-          $prNumber = "$(System.PullRequest.PullRequestNumber)"
-        }
-        if (-not $prSourceBranch -or $prSourceBranch -eq "") {
-          $prSourceBranch = "$(System.PullRequest.SourceBranch)"
-        }
-        
-        if ($prNumber -and $prNumber -ne "" -and $prNumber -ne "$(System.PullRequest.PullRequestNumber)") {
+        if ($prNumber -and $prNumber -ne "") {
           Write-Host "PR Number: $prNumber"
-          if ($prSourceBranch -and $prSourceBranch -ne "" -and $prSourceBranch -ne "$(System.PullRequest.SourceBranch)") {
+          if ($prSourceBranch -and $prSourceBranch -ne "") {
             Write-Host "PR Source Branch: $prSourceBranch"
           }
           if ($prTargetBranch -and $prTargetBranch -ne "") {
@@ -191,17 +183,11 @@ stages:
         Write-Host "✓ Ready for Azure DevOps review"
         Write-Host "=========================================="
         
-        # Use environment variables first to avoid YAML variable expansion issues
+        # Use environment variables only - these are set by Azure DevOps for PR builds
         $prNumber = $env:SYSTEM_PULLREQUEST_PULLREQUESTNUMBER
         $prTargetBranch = $env:SYSTEM_PULLREQUEST_TARGETBRANCH
         
-        # Fallback to YAML variable if environment variable is not available
-        if (-not $prNumber -or $prNumber -eq "") {
-          $prNumber = "$(System.PullRequest.PullRequestNumber)"
-        }
-        
-        # Only display if PR number is valid (not the literal YAML variable string)
-        if ($prNumber -and $prNumber -ne "" -and $prNumber -ne "$(System.PullRequest.PullRequestNumber)") {
+        if ($prNumber -and $prNumber -ne "") {
           Write-Host "Azure DevOps PR: $prNumber"
           if ($prTargetBranch -and $prTargetBranch -ne "") {
             Write-Host "Branch: $(Build.SourceBranchName) -> $prTargetBranch"
