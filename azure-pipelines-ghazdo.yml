@@ -143,6 +143,311 @@ stages:
         }
       displayName: '🔍 Check Build Warnings & Errors'
 
+    # Security scan - check for hardcoded secrets and security issues
+    - pwsh: |
+        Write-Host "=========================================="
+        Write-Host "🔒 SECURITY SCAN - CODE SECURITY CHECKS"
+        Write-Host "=========================================="
+        
+        $securityIssues = @()
+        $criticalIssues = @()
+        $warningIssues = @()
+        
+        # Files to scan (exclude build outputs and dependencies)
+        $filesToScan = Get-ChildItem -Path . -Include *.cs,*.json,*.config,*.cshtml,*.js,*.ts -Recurse | 
+            Where-Object { 
+                $_.FullName -notlike "*\bin\*" -and 
+                $_.FullName -notlike "*\obj\*" -and 
+                $_.FullName -notlike "*\node_modules\*" -and
+                $_.FullName -notlike "*\packages\*" -and
+                $_.FullName -notlike "*\.git\*"
+            }
+        
+        Write-Host "Scanning $($filesToScan.Count) files for security issues..."
+        Write-Host ""
+        
+        # Security patterns to detect
+        $secretPatterns = @{
+            "API Key" = @(
+                "api[_-]?key\s*[=:]\s*['""]?[a-zA-Z0-9_\-]{20,}['""]?",
+                "sk_live_[a-zA-Z0-9]{32,}",
+                "sk_test_[a-zA-Z0-9]{32,}",
+                "AKIA[0-9A-Z]{16}",
+                "ghp_[a-zA-Z0-9]{36}",
+                "gho_[a-zA-Z0-9]{36}",
+                "ghu_[a-zA-Z0-9]{36}"
+            )
+            "Password" = @(
+                "password\s*[=:]\s*['""]?[^'""\s]{6,}['""]?",
+                "pwd\s*[=:]\s*['""]?[^'""\s]{6,}['""]?",
+                "passwd\s*[=:]\s*['""]?[^'""\s]{6,}['""]?",
+                "pass\s*[=:]\s*['""]?[^'""\s]{6,}['""]?"
+            )
+            "Connection String" = @(
+                "connectionstring\s*[=:]\s*['""]?[^'""]{20,}['""]?",
+                "connection\s*string\s*[=:]\s*['""]?[^'""]{20,}['""]?",
+                "connectionstring\s*[=:]\s*['""]?.*password.*['""]?",
+                "connectionstring\s*[=:]\s*['""]?.*pwd.*['""]?"
+            )
+            "JWT Secret" = @(
+                "jwt[_-]?secret\s*[=:]\s*['""]?[^'""]{20,}['""]?",
+                "secret[_-]?key\s*[=:]\s*['""]?[^'""]{20,}['""]?",
+                "jwt[_-]?key\s*[=:]\s*['""]?[^'""]{20,}['""]?"
+            )
+            "AWS Credentials" = @(
+                "aws[_-]?access[_-]?key",
+                "aws[_-]?secret[_-]?key",
+                "AKIA[0-9A-Z]{16}",
+                "wJalrXUtnFEMI"
+            )
+            "Azure Key" = @(
+                "accountkey\s*[=:]\s*['""]?[^'""]{20,}['""]?",
+                "DefaultEndpointsProtocol",
+                "AccountKey=[^'""\s]{20,}"
+            )
+            "Private Key" = @(
+                "-----BEGIN.*PRIVATE KEY-----",
+                "-----BEGIN RSA PRIVATE KEY-----",
+                "-----BEGIN OPENSSH PRIVATE KEY-----",
+                "-----BEGIN EC PRIVATE KEY-----"
+            )
+            "Certificate" = @(
+                "certificate\s*[=:]\s*['""]?[^'""]{20,}['""]?",
+                "thumbprint\s*[=:]\s*['""]?[^'""]{20,}['""]?",
+                "-----BEGIN CERTIFICATE-----"
+            )
+            "OAuth Secret" = @(
+                "oauth[_-]?secret\s*[=:]\s*['""]?[^'""]{20,}['""]?",
+                "client[_-]?secret\s*[=:]\s*['""]?[^'""]{20,}['""]?",
+                "GOCSPX-[a-zA-Z0-9_-]{40,}"
+            )
+            "Encryption Key" = @(
+                "encryption[_-]?key\s*[=:]\s*['""]?[^'""]{20,}['""]?",
+                "aes[_-]?key\s*[=:]\s*['""]?[^'""]{20,}['""]?",
+                "decryption[_-]?key\s*[=:]\s*['""]?[^'""]{20,}['""]?"
+            )
+            "Database Credentials" = @(
+                "database[_-]?password\s*[=:]\s*['""]?[^'""]{6,}['""]?",
+                "db[_-]?password\s*[=:]\s*['""]?[^'""]{6,}['""]?",
+                "sql[_-]?password\s*[=:]\s*['""]?[^'""]{6,}['""]?"
+            )
+        }
+        
+        # Critical security patterns (will fail the build)
+        $criticalPatterns = @(
+            "-----BEGIN.*PRIVATE KEY-----",
+            "sk_live_",
+            "AKIA[0-9A-Z]{16}",
+            "ghp_[a-zA-Z0-9]{36}",
+            "password\s*[=:]\s*['""]?[^'""\s]{8,}['""]?"
+        )
+        
+        foreach ($file in $filesToScan) {
+            try {
+                $content = Get-Content $file.FullName -Raw -ErrorAction SilentlyContinue
+                if ($content) {
+                    $relativePath = $file.FullName.Replace((Get-Location).Path + "\", "")
+                    
+                    # Check for critical issues
+                    foreach ($pattern in $criticalPatterns) {
+                        if ($content -match $pattern -and $relativePath -notlike "*BadSecurity*" -and $relativePath -notlike "*BadCode*") {
+                            $lineNumber = ($content.Substring(0, $content.IndexOf($matches[0])).Split("`n").Count)
+                            $criticalIssues += "❌ CRITICAL: Potential secret found in $relativePath (line ~$lineNumber)"
+                        }
+                    }
+                    
+                    # Check for all security patterns
+                    foreach ($patternType in $secretPatterns.Keys) {
+                        foreach ($pattern in $secretPatterns[$patternType]) {
+                            if ($content -match $pattern -and $relativePath -notlike "*BadSecurity*" -and $relativePath -notlike "*BadCode*") {
+                                $lineNumber = ($content.Substring(0, $content.IndexOf($matches[0])).Split("`n").Count)
+                                $warningIssues += "⚠️ WARNING: $patternType found in $relativePath (line ~$lineNumber)"
+                            }
+                        }
+                    }
+                }
+            } catch {
+                # Skip files that can't be read
+            }
+        }
+        
+        # Check for intentional test files
+        $badSecurityFiles = Get-ChildItem -Path . -Filter "*BadSecurity*" -Recurse | 
+            Where-Object { $_.FullName -notlike "*\bin\*" -and $_.FullName -notlike "*\obj\*" }
+        
+        if ($badSecurityFiles) {
+            Write-Host "ℹ️ Found intentional security test files:"
+            $badSecurityFiles | ForEach-Object { Write-Host "  - $($_.FullName)" }
+            Write-Host ""
+        }
+        
+        # Report results
+        Write-Host "=========================================="
+        Write-Host "SECURITY SCAN RESULTS"
+        Write-Host "=========================================="
+        
+        if ($criticalIssues.Count -gt 0) {
+            Write-Host "❌ CRITICAL SECURITY ISSUES FOUND: $($criticalIssues.Count)"
+            $criticalIssues | ForEach-Object { Write-Host "  $_" }
+            Write-Host ""
+            Write-Host "🚨 CRITICAL: Hardcoded secrets detected! These must be removed before merging."
+            Write-Host "   Use Azure Key Vault, User Secrets, or Environment Variables instead."
+            Write-Host ""
+            $securityIssues += $criticalIssues
+        }
+        
+        if ($warningIssues.Count -gt 0) {
+            Write-Host "⚠️ SECURITY WARNINGS FOUND: $($warningIssues.Count)"
+            $warningIssues | ForEach-Object { Write-Host "  $_" }
+            Write-Host ""
+            Write-Host "⚠️ Please review these potential security issues."
+            Write-Host ""
+            $securityIssues += $warningIssues
+        }
+        
+        if ($securityIssues.Count -eq 0) {
+            Write-Host "✅ No obvious security issues detected in source code"
+            Write-Host ""
+        }
+        
+        Write-Host "=========================================="
+        
+        # Fail the build if critical issues are found
+        if ($criticalIssues.Count -gt 0) {
+            Write-Host "❌ Build failed due to critical security issues!"
+            exit 1
+        }
+      displayName: '🔒 Security Scan - Hardcoded Secrets'
+
+    # Check for vulnerable and deprecated NuGet packages
+    - pwsh: |
+        Write-Host "=========================================="
+        Write-Host "📦 NUGET PACKAGE SECURITY CHECK"
+        Write-Host "=========================================="
+        Write-Host "Checking for vulnerable and deprecated packages..."
+        Write-Host ""
+        
+        $hasVulnerabilities = $false
+        $hasDeprecated = $false
+        $vulnerabilityCount = 0
+        
+        # First, restore packages to ensure we have the latest vulnerability data
+        Write-Host "📦 Restoring packages to get latest vulnerability information..."
+        dotnet restore --verbosity quiet 2>&1 | Out-Null
+        Write-Host ""
+        
+        # Check for vulnerable packages
+        Write-Host "🔍 Scanning for vulnerable packages..."
+        try {
+          $vulnOutput = dotnet list package --vulnerable --include-transitive 2>&1 | Out-String
+          
+          # Check if output contains vulnerability indicators
+          if ($vulnOutput -match "vulnerable|CVE-\d{4}-\d+|severity|High|Critical|Medium") {
+            Write-Host "❌ VULNERABLE PACKAGES FOUND:"
+            Write-Host ""
+            
+            # Display the full output
+            $vulnOutput -split "`n" | ForEach-Object {
+              $line = $_.Trim()
+              if ($line -and $line -notmatch "^The following|^Project|^Top-level|^Transitive") {
+                if ($line -match "CVE|vulnerable|severity|High|Critical") {
+                  Write-Host "  ❌ $line"
+                  $vulnerabilityCount++
+                } elseif ($line -match "^\s*[A-Za-z]") {
+                  Write-Host "  ⚠️ $line"
+                }
+              }
+            }
+            
+            # Also try to get structured output
+            $vulnJson = dotnet list package --vulnerable --include-transitive --format json 2>&1
+            if ($vulnJson -match "vulnerable" -and $LASTEXITCODE -eq 0) {
+              Write-Host ""
+              Write-Host "Detailed vulnerability information:"
+              Write-Host $vulnJson
+            }
+            
+            Write-Host ""
+            Write-Host "🚨 ACTION REQUIRED: Update or remove vulnerable packages!"
+            Write-Host "   Run: dotnet list package --vulnerable --include-transitive"
+            Write-Host "   Then update packages using: dotnet add package <PackageName> --version <SafeVersion>"
+            Write-Host "   Or use: dotnet add package <PackageName> --version latest"
+            Write-Host ""
+            $hasVulnerabilities = $true
+          } else {
+            Write-Host "✅ No vulnerable packages found"
+            Write-Host ""
+          }
+        } catch {
+          Write-Host "⚠️ Could not check for vulnerable packages: $_"
+          Write-Host "   This might be due to network issues or NuGet feed problems"
+          Write-Host ""
+        }
+        
+        # Check for deprecated packages
+        Write-Host "🔍 Scanning for deprecated packages..."
+        try {
+          $depOutput = dotnet list package --deprecated --include-transitive 2>&1 | Out-String
+          
+          # Check if output contains deprecation indicators
+          if ($depOutput -match "deprecated|warning|deprecation") {
+            Write-Host "⚠️ DEPRECATED PACKAGES FOUND:"
+            Write-Host ""
+            
+            # Display the full output
+            $depOutput -split "`n" | ForEach-Object {
+              $line = $_.Trim()
+              if ($line -and $line -notmatch "^The following|^Project|^Top-level|^Transitive") {
+                if ($line -match "deprecated|deprecation") {
+                  Write-Host "  ⚠️ $line"
+                } elseif ($line -match "^\s*[A-Za-z]") {
+                  Write-Host "  ℹ️ $line"
+                }
+              }
+            }
+            
+            Write-Host ""
+            Write-Host "⚠️ ACTION RECOMMENDED: Update deprecated packages to supported versions"
+            Write-Host "   Run: dotnet list package --deprecated --include-transitive"
+            Write-Host "   Then update: dotnet add package <PackageName> --version <LatestVersion>"
+            Write-Host ""
+            $hasDeprecated = $true
+          } else {
+            Write-Host "✅ No deprecated packages found"
+            Write-Host ""
+          }
+        } catch {
+          Write-Host "⚠️ Could not check for deprecated packages: $_"
+          Write-Host ""
+        }
+        
+        # Summary
+        Write-Host "=========================================="
+        Write-Host "NUGET PACKAGE SECURITY SUMMARY"
+        Write-Host "=========================================="
+        
+        if ($hasVulnerabilities) {
+          Write-Host "❌ Vulnerable packages detected - BUILD WILL FAIL"
+          Write-Host "   Found $vulnerabilityCount potential vulnerability(ies)"
+          Write-Host ""
+          Write-Host "To fix:"
+          Write-Host "1. Review vulnerable packages: dotnet list package --vulnerable --include-transitive"
+          Write-Host "2. Check for updates: dotnet list package --outdated"
+          Write-Host "3. Update to safe versions: dotnet add package <PackageName> --version <SafeVersion>"
+          Write-Host "4. Or remove packages if no longer needed"
+          Write-Host "5. Rebuild and verify: dotnet build"
+          Write-Host ""
+          exit 1
+        } elseif ($hasDeprecated) {
+          Write-Host "⚠️ Deprecated packages found (non-blocking)"
+          Write-Host "   Consider updating to supported versions to avoid future issues"
+        } else {
+          Write-Host "✅ All packages are up-to-date and secure"
+        }
+        
+        Write-Host "=========================================="
+      displayName: '📦 NuGet Package Security Check'
+
     # Code analysis - check for common issues
     - pwsh: |
         Write-Host "📊 Running code analysis..."
@@ -179,6 +484,8 @@ stages:
         Write-Host "=========================================="
         Write-Host "✓ Code compiles successfully"
         Write-Host "✓ Build warnings/errors checked"
+        Write-Host "✓ Security scan completed"
+        Write-Host "✓ NuGet package security checked"
         Write-Host "✓ Code structure validated"
         Write-Host "✓ Ready for Azure DevOps review"
         Write-Host "=========================================="
