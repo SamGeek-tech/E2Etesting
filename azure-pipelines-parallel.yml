@@ -1,0 +1,581 @@
+trigger:
+- main
+
+pool:
+  vmImage: 'windows-latest'
+
+variables:
+  buildConfiguration: 'Release'
+  NUGET_PACKAGES: $(Pipeline.Workspace)/.nuget/packages
+  npm_config_cache: $(Pipeline.Workspace)/.npm
+  PLAYWRIGHT_BROWSERS_PATH: $(Pipeline.Workspace)/.playwright-browsers
+
+stages:
+- stage: Build
+  displayName: '🔨 Build'
+  jobs:
+  - job: BuildJob
+    displayName: 'Build Solution'
+    steps:
+    - pwsh: |
+        Write-Host "🚀 Build $(Build.BuildId) | Branch: $(Build.SourceBranchName) | Config: $(buildConfiguration)"
+      displayName: '📋 Pipeline Info'
+
+    - task: UseDotNet@2
+      inputs:
+        packageType: 'sdk'
+        version: '8.x'
+      displayName: '⚙️ Setup .NET 8 SDK'
+
+    # ⚡ CACHE: NuGet packages
+    - task: Cache@2
+      inputs:
+        key: 'nuget | "$(Agent.OS)" | **/*.csproj'
+        restoreKeys: |
+          nuget | "$(Agent.OS)"
+        path: $(NUGET_PACKAGES)
+      displayName: '⚡ Cache NuGet packages'
+
+    - pwsh: |
+        dotnet restore --verbosity minimal
+      displayName: '📦 Restore Dependencies'
+
+    - pwsh: |
+        dotnet build --configuration $(buildConfiguration) --no-restore
+      displayName: '🔨 Build Solution'
+
+    # ⚡ Publish built binaries for Test jobs to reuse
+    - task: PublishPipelineArtifact@1
+      inputs:
+        targetPath: '$(Build.SourcesDirectory)'
+        artifact: 'source-with-binaries'
+        publishLocation: 'pipeline'
+      displayName: '💾 Publish Built Source'
+
+    - task: DotNetCoreCLI@2
+      inputs:
+        command: 'publish'
+        publishWebProjects: true
+        arguments: '--configuration $(buildConfiguration) --no-build --output $(Build.ArtifactStagingDirectory)'
+        zipAfterPublish: true
+      displayName: '📤 Publish Web Projects'
+
+    - task: PublishBuildArtifacts@1
+      inputs:
+        PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+        ArtifactName: 'drop'
+        publishLocation: 'Container'
+      displayName: '💾 Publish Build Artifacts'
+
+- stage: Testing
+  displayName: '🧪 Tests (Parallel Execution)'
+  dependsOn: Build
+  condition: succeeded()
+  jobs:
+  # ==================== UNIT TESTS ====================
+  - job: Unit_Test_Job
+    displayName: '✅ Unit Tests'
+    steps:
+    - checkout: none
+
+    - task: UseDotNet@2
+      inputs:
+        packageType: 'sdk'
+        version: '8.x'
+      displayName: '⚙️ Setup .NET SDK'
+
+    # ⚡ Download pre-built binaries from Build stage
+    - task: DownloadPipelineArtifact@2
+      inputs:
+        artifact: 'source-with-binaries'
+        path: '$(Build.SourcesDirectory)'
+      displayName: '⚡ Download Built Source'
+
+    - pwsh: |
+        Write-Host "🧪 Running Unit Tests..."
+        dotnet test tests/Unit.Tests/Unit.Tests.csproj --configuration $(buildConfiguration) --no-build --logger "trx;LogFileName=unit_results.trx"
+      displayName: '🧪 Run Unit Tests'
+
+    - task: PublishTestResults@2
+      condition: always()
+      inputs:
+        testResultsFormat: 'VSTest'
+        testResultsFiles: '**/unit_results.trx'
+        failTaskOnFailedTests: true
+      displayName: '📊 Publish Unit Test Results'
+
+  # ==================== PLAYWRIGHT E2E (.NET) ====================
+  - job: E2E_Test_Job
+    displayName: '🎭 Playwright Tests .NET'
+    steps:
+    - checkout: none
+
+    - task: UseDotNet@2
+      inputs:
+        packageType: 'sdk'
+        version: '8.x'
+      displayName: '⚙️ Setup .NET SDK'
+
+    # ⚡ Download pre-built binaries from Build stage
+    - task: DownloadPipelineArtifact@2
+      inputs:
+        artifact: 'source-with-binaries'
+        path: '$(Build.SourcesDirectory)'
+      displayName: '⚡ Download Built Source'
+
+    # ⚡ CACHE: Playwright browsers
+    - task: Cache@2
+      inputs:
+        key: 'playwright-dotnet | "$(Agent.OS)" | tests/E2E.Tests/E2E.Tests.csproj'
+        path: $(PLAYWRIGHT_BROWSERS_PATH)
+      displayName: '⚡ Cache Playwright Browsers'
+
+    - pwsh: |
+        $scriptPath = "tests/E2E.Tests/bin/$(buildConfiguration)/net8.0/playwright.ps1"
+        if (Test-Path $scriptPath) {
+          pwsh -ExecutionPolicy Bypass -File $scriptPath install --with-deps chromium
+        } else {
+          dotnet tool update --global Microsoft.Playwright.CLI 2>$null
+          playwright install --with-deps chromium
+        }
+      displayName: '🌐 Install Playwright Browsers'
+      env:
+        PLAYWRIGHT_BROWSERS_PATH: $(PLAYWRIGHT_BROWSERS_PATH)
+
+    - pwsh: |
+        Write-Host "🚀 Starting services..."
+        $env:ASPNETCORE_ENVIRONMENT = "Development"
+
+        # Start all services in parallel
+        $invProc = Start-Process dotnet -ArgumentList "run","--project","src/InventoryService.Api/InventoryService.Api.csproj","--configuration","$(buildConfiguration)","--no-build","--urls=http://127.0.0.1:5001" -PassThru -RedirectStandardOutput inv.log -RedirectStandardError inv_err.log
+        $ordProc = Start-Process dotnet -ArgumentList "run","--project","src/OrderService.Api/OrderService.Api.csproj","--configuration","$(buildConfiguration)","--no-build","--urls=http://127.0.0.1:5000" -PassThru -RedirectStandardOutput ord.log -RedirectStandardError ord_err.log
+        $webProc = Start-Process dotnet -ArgumentList "run","--project","src/OrderWeb.Mvc/OrderWeb.Mvc.csproj","--configuration","$(buildConfiguration)","--no-build","--urls=http://127.0.0.1:5002" -PassThru -RedirectStandardOutput web.log -RedirectStandardError web_err.log
+
+        # ⚡ Fast polling - 2s intervals
+        $maxWait = 90; $elapsed = 0
+        while ($elapsed -lt $maxWait) {
+          Start-Sleep -Seconds 2; $elapsed += 2
+          $webOk = $invOk = $ordOk = $false
+          try { Invoke-WebRequest "http://127.0.0.1:5002" -TimeoutSec 2 -UseBasicParsing -EA Stop | Out-Null; $webOk = $true } catch {}
+          try { Invoke-WebRequest "http://127.0.0.1:5001/api/inventory" -TimeoutSec 2 -UseBasicParsing -EA Stop | Out-Null; $invOk = $true } catch {}
+          try { Invoke-WebRequest "http://127.0.0.1:5000/swagger/index.html" -TimeoutSec 2 -UseBasicParsing -EA Stop | Out-Null; $ordOk = $true } catch {}
+          if ($webOk -and $invOk -and $ordOk) { Write-Host "✅ All services ready in $elapsed`s"; break }
+          Write-Host "[$elapsed`s] Web:$(if($webOk){'✅'}else{'⏳'}) Inv:$(if($invOk){'✅'}else{'⏳'}) Ord:$(if($ordOk){'✅'}else{'⏳'})"
+        }
+        if (-not ($webOk -and $invOk -and $ordOk)) { 
+          Get-Content inv_err.log,ord_err.log,web_err.log -EA SilentlyContinue
+          exit 1 
+        }
+
+        Write-Host "🧪 Running Playwright tests..."
+        try {
+          dotnet test tests/E2E.Tests/E2E.Tests.csproj --configuration $(buildConfiguration) --no-build --settings tests/E2E.Tests/.runsettings --logger "trx;LogFileName=playwright_results.trx"
+        } finally {
+          Stop-Process -Id $invProc.Id,$ordProc.Id,$webProc.Id -Force -EA SilentlyContinue
+          Write-Host "✅ Services stopped"
+        }
+      displayName: '🧪 Start Services & Run Tests'
+      workingDirectory: '$(Build.SourcesDirectory)'
+      env:
+        PLAYWRIGHT_BROWSERS_PATH: $(PLAYWRIGHT_BROWSERS_PATH)
+
+    - task: PublishTestResults@2
+      condition: always()
+      inputs:
+        testResultsFormat: 'VSTest'
+        testResultsFiles: '**/playwright_results.trx'
+        failTaskOnFailedTests: true
+      displayName: '📊 Publish Playwright Test Results'
+
+    - pwsh: |
+        $outputDir = "$(Build.SourcesDirectory)/tests/E2E.Tests/bin/$(buildConfiguration)/net8.0"
+        $artifactDir = "$(Build.SourcesDirectory)/playwright-dotnet-artifacts"
+        
+        Write-Host "Collecting Playwright .NET artifacts from: $outputDir"
+        New-Item -ItemType Directory -Path $artifactDir -Force | Out-Null
+        
+        # Copy trace files
+        $traces = Get-ChildItem -Path $outputDir -Filter "*.zip" -Recurse -ErrorAction SilentlyContinue
+        if ($traces) {
+          $tracesDir = "$artifactDir/traces"
+          New-Item -ItemType Directory -Path $tracesDir -Force | Out-Null
+          $traces | Copy-Item -Destination $tracesDir
+          Write-Host "✅ Copied $($traces.Count) trace file(s)"
+        } else {
+          Write-Host "⚠️ No trace files found"
+        }
+        
+        # Copy screenshots
+        $screenshots = Get-ChildItem -Path $outputDir -Filter "*.png" -Recurse -ErrorAction SilentlyContinue
+        if ($screenshots) {
+          $screenshotsDir = "$artifactDir/screenshots"
+          New-Item -ItemType Directory -Path $screenshotsDir -Force | Out-Null
+          $screenshots | Copy-Item -Destination $screenshotsDir
+          Write-Host "✅ Copied $($screenshots.Count) screenshot(s)"
+        } else {
+          Write-Host "⚠️ No screenshots found"
+        }
+        
+        # Copy videos folder if exists
+        $videosDir = "$outputDir/videos"
+        if (Test-Path $videosDir) {
+          Copy-Item -Path $videosDir -Destination "$artifactDir/videos" -Recurse
+          Write-Host "✅ Copied videos folder"
+        } else {
+          Write-Host "⚠️ No videos folder found"
+        }
+        
+        # Create README if no artifacts found
+        $hasArtifacts = (Get-ChildItem -Path $artifactDir -Recurse -File).Count -gt 0
+        if (-not $hasArtifacts) {
+          "No traces, screenshots, or videos were recorded during this test run." | Out-File "$artifactDir/README.txt"
+          Write-Host "⚠️ No artifacts found, created placeholder"
+        }
+        
+        Write-Host "Artifact directory contents:"
+        Get-ChildItem -Path $artifactDir -Recurse | ForEach-Object { Write-Host "  $($_.FullName)" }
+      displayName: '📁 Collect Playwright .NET Artifacts'
+      condition: always()
+
+    - task: PublishBuildArtifacts@1
+      condition: always()
+      inputs:
+        PathtoPublish: '$(Build.SourcesDirectory)/playwright-dotnet-artifacts'
+        ArtifactName: 'playwright-dotnet-traces-screenshots-videos'
+      displayName: '📁 Publish Playwright .NET Artifacts'
+
+  # ==================== PLAYWRIGHT NODE.JS E2E ====================
+  - job: PlaywrightNode_Test_Job
+    displayName: '🎭 Playwright Tests Node.js'
+    steps:
+    - checkout: none
+
+    - task: NodeTool@0
+      inputs:
+        versionSpec: '20.x'
+      displayName: '⚙️ Setup Node.js'
+
+    - task: UseDotNet@2
+      inputs:
+        packageType: 'sdk'
+        version: '8.x'
+      displayName: '⚙️ Setup .NET SDK'
+
+    # ⚡ Download pre-built binaries
+    - task: DownloadPipelineArtifact@2
+      inputs:
+        artifact: 'source-with-binaries'
+        path: '$(Build.SourcesDirectory)'
+      displayName: '⚡ Download Built Source'
+
+    # ⚡ CACHE: npm node_modules (faster than npm cache)
+    - task: Cache@2
+      inputs:
+        key: 'node-modules-pw | "$(Agent.OS)" | tests/PlaywrightNode.Tests/package-lock.json'
+        path: tests/PlaywrightNode.Tests/node_modules
+      displayName: '⚡ Cache node_modules'
+
+    # ⚡ CACHE: Playwright browsers (Node)
+    - task: Cache@2
+      inputs:
+        key: 'playwright-browsers | "$(Agent.OS)" | tests/PlaywrightNode.Tests/package-lock.json'
+        path: $(PLAYWRIGHT_BROWSERS_PATH)
+        cacheHitVar: PLAYWRIGHT_CACHE_HIT
+      displayName: '⚡ Cache Playwright Browsers'
+
+    - pwsh: |
+        Push-Location tests/PlaywrightNode.Tests
+        # Only run npm ci if node_modules doesn't have playwright
+        if (-not (Test-Path "node_modules/@playwright/test")) {
+          Write-Host "Installing npm packages..."
+          npm ci --prefer-offline
+        } else {
+          Write-Host "✅ npm packages already cached"
+        }
+        Pop-Location
+      displayName: '📦 Install npm packages'
+
+    - pwsh: |
+        Write-Host "Installing Playwright browsers..."
+        Push-Location tests/PlaywrightNode.Tests
+        npx playwright install chromium
+        Pop-Location
+      displayName: '🌐 Install Playwright Browsers'
+      condition: ne(variables.PLAYWRIGHT_CACHE_HIT, 'true')
+      env:
+        PLAYWRIGHT_BROWSERS_PATH: $(PLAYWRIGHT_BROWSERS_PATH)
+
+    - pwsh: |
+        Write-Host "🚀 Starting services..."
+        $env:ASPNETCORE_ENVIRONMENT = "Development"
+
+        $invProc = Start-Process dotnet -ArgumentList "run","--project","src/InventoryService.Api/InventoryService.Api.csproj","--configuration","$(buildConfiguration)","--no-build","--urls=http://127.0.0.1:5001" -PassThru -RedirectStandardOutput inv.log -RedirectStandardError inv_err.log
+        $ordProc = Start-Process dotnet -ArgumentList "run","--project","src/OrderService.Api/OrderService.Api.csproj","--configuration","$(buildConfiguration)","--no-build","--urls=http://127.0.0.1:5000" -PassThru -RedirectStandardOutput ord.log -RedirectStandardError ord_err.log
+        $webProc = Start-Process dotnet -ArgumentList "run","--project","src/OrderWeb.Mvc/OrderWeb.Mvc.csproj","--configuration","$(buildConfiguration)","--no-build","--urls=http://127.0.0.1:5002" -PassThru -RedirectStandardOutput web.log -RedirectStandardError web_err.log
+
+        $maxWait = 90; $elapsed = 0
+        while ($elapsed -lt $maxWait) {
+          Start-Sleep -Seconds 2; $elapsed += 2
+          $webOk = $invOk = $ordOk = $false
+          try { Invoke-WebRequest "http://127.0.0.1:5002" -TimeoutSec 2 -UseBasicParsing -EA Stop | Out-Null; $webOk = $true } catch {}
+          try { Invoke-WebRequest "http://127.0.0.1:5001/api/inventory" -TimeoutSec 2 -UseBasicParsing -EA Stop | Out-Null; $invOk = $true } catch {}
+          try { Invoke-WebRequest "http://127.0.0.1:5000/swagger/index.html" -TimeoutSec 2 -UseBasicParsing -EA Stop | Out-Null; $ordOk = $true } catch {}
+          if ($webOk -and $invOk -and $ordOk) { Write-Host "✅ All services ready in $elapsed`s"; break }
+          Write-Host "[$elapsed`s] Web:$(if($webOk){'✅'}else{'⏳'}) Inv:$(if($invOk){'✅'}else{'⏳'}) Ord:$(if($ordOk){'✅'}else{'⏳'})"
+        }
+        if (-not ($webOk -and $invOk -and $ordOk)) { Get-Content inv_err.log,ord_err.log,web_err.log -EA SilentlyContinue; exit 1 }
+
+        Write-Host "🧪 Running Playwright Node.js tests..."
+        Push-Location "tests/PlaywrightNode.Tests"
+        try {
+          npx playwright test --reporter=junit,html
+        } finally {
+          Pop-Location
+          Stop-Process -Id $invProc.Id,$ordProc.Id,$webProc.Id -Force -EA SilentlyContinue
+          Write-Host "✅ Services stopped"
+        }
+      displayName: '🧪 Start Services & Run Tests'
+      workingDirectory: '$(Build.SourcesDirectory)'
+      env:
+        CI: 'true'
+        PLAYWRIGHT_BROWSERS_PATH: $(PLAYWRIGHT_BROWSERS_PATH)
+
+    - task: PublishTestResults@2
+      condition: always()
+      inputs:
+        testResultsFormat: 'JUnit'
+        testResultsFiles: 'tests/PlaywrightNode.Tests/test-results/results.xml'
+        failTaskOnFailedTests: true
+      displayName: '📊 Publish Playwright Node.js Test Results'
+
+    - pwsh: |
+        $reportPath = "tests/PlaywrightNode.Tests/playwright-report"
+        $resultsPath = "tests/PlaywrightNode.Tests/test-results"
+        
+        if (-not (Test-Path $reportPath)) {
+          Write-Host "⚠️ Report directory not found, creating placeholder"
+          New-Item -ItemType Directory -Path $reportPath -Force | Out-Null
+          "No report generated" | Out-File "$reportPath/README.txt"
+        }
+        
+        if (-not (Test-Path $resultsPath)) {
+          Write-Host "⚠️ Results directory not found, creating placeholder"
+          New-Item -ItemType Directory -Path $resultsPath -Force | Out-Null
+          "No results generated" | Out-File "$resultsPath/README.txt"
+        }
+      displayName: '📁 Prepare Playwright Node.js Artifacts'
+      condition: always()
+
+    - task: PublishBuildArtifacts@1
+      condition: always()
+      inputs:
+        PathtoPublish: 'tests/PlaywrightNode.Tests/playwright-report'
+        ArtifactName: 'playwright-node-report'
+      displayName: '📁 Publish Playwright Node.js Report'
+
+    - task: PublishBuildArtifacts@1
+      condition: always()
+      inputs:
+        PathtoPublish: 'tests/PlaywrightNode.Tests/test-results'
+        ArtifactName: 'playwright-node-traces'
+      displayName: '📁 Publish Playwright Node.js Traces'
+
+  # ==================== CYPRESS E2E ====================
+  - job: Cypress_Test_Job
+    displayName: '🌲 Cypress Tests'
+    steps:
+    - checkout: none
+
+    - task: NodeTool@0
+      inputs:
+        versionSpec: '20.x'
+      displayName: '⚙️ Setup Node.js'
+
+    - task: UseDotNet@2
+      inputs:
+        packageType: 'sdk'
+        version: '8.x'
+      displayName: '⚙️ Setup .NET SDK'
+
+    # ⚡ Download pre-built binaries
+    - task: DownloadPipelineArtifact@2
+      inputs:
+        artifact: 'source-with-binaries'
+        path: '$(Build.SourcesDirectory)'
+      displayName: '⚡ Download Built Source'
+
+    # ⚡ CACHE: Cypress node_modules
+    - task: Cache@2
+      inputs:
+        key: 'node-modules-cy | "$(Agent.OS)" | tests/Cypress.Tests/package-lock.json'
+        path: tests/Cypress.Tests/node_modules
+      displayName: '⚡ Cache node_modules'
+
+    # ⚡ CACHE: Cypress binary
+    - task: Cache@2
+      inputs:
+        key: 'cypress-binary | "$(Agent.OS)" | tests/Cypress.Tests/package-lock.json'
+        path: $(Pipeline.Workspace)/.cypress-cache
+        cacheHitVar: CYPRESS_CACHE_HIT
+      displayName: '⚡ Cache Cypress Binary'
+
+    - pwsh: |
+        Push-Location tests/Cypress.Tests
+        if (-not (Test-Path "node_modules/cypress")) {
+          Write-Host "Installing Cypress packages..."
+          npm ci
+        } else {
+          Write-Host "✅ Cypress packages already cached"
+        }
+        Pop-Location
+      displayName: '📦 Install Cypress'
+      env:
+        CYPRESS_CACHE_FOLDER: $(Pipeline.Workspace)/.cypress-cache
+
+    - pwsh: |
+        Write-Host "🚀 Starting services..."
+        $env:ASPNETCORE_ENVIRONMENT = "Development"
+
+        $invProc = Start-Process dotnet -ArgumentList "run","--project","src/InventoryService.Api/InventoryService.Api.csproj","--configuration","$(buildConfiguration)","--no-build","--urls=http://127.0.0.1:5001" -PassThru -RedirectStandardOutput inv.log -RedirectStandardError inv_err.log
+        $ordProc = Start-Process dotnet -ArgumentList "run","--project","src/OrderService.Api/OrderService.Api.csproj","--configuration","$(buildConfiguration)","--no-build","--urls=http://127.0.0.1:5000" -PassThru -RedirectStandardOutput ord.log -RedirectStandardError ord_err.log
+        $webProc = Start-Process dotnet -ArgumentList "run","--project","src/OrderWeb.Mvc/OrderWeb.Mvc.csproj","--configuration","$(buildConfiguration)","--no-build","--urls=http://127.0.0.1:5002" -PassThru -RedirectStandardOutput web.log -RedirectStandardError web_err.log
+
+        $maxWait = 90; $elapsed = 0
+        while ($elapsed -lt $maxWait) {
+          Start-Sleep -Seconds 2; $elapsed += 2
+          $webOk = $invOk = $ordOk = $false
+          try { Invoke-WebRequest "http://127.0.0.1:5002" -TimeoutSec 2 -UseBasicParsing -EA Stop | Out-Null; $webOk = $true } catch {}
+          try { Invoke-WebRequest "http://127.0.0.1:5001/api/inventory" -TimeoutSec 2 -UseBasicParsing -EA Stop | Out-Null; $invOk = $true } catch {}
+          try { Invoke-WebRequest "http://127.0.0.1:5000/swagger/index.html" -TimeoutSec 2 -UseBasicParsing -EA Stop | Out-Null; $ordOk = $true } catch {}
+          if ($webOk -and $invOk -and $ordOk) { Write-Host "✅ All services ready in $elapsed`s"; break }
+          Write-Host "[$elapsed`s] Web:$(if($webOk){'✅'}else{'⏳'}) Inv:$(if($invOk){'✅'}else{'⏳'}) Ord:$(if($ordOk){'✅'}else{'⏳'})"
+        }
+        if (-not ($webOk -and $invOk -and $ordOk)) { Get-Content inv_err.log,ord_err.log,web_err.log -EA SilentlyContinue; exit 1 }
+
+        Write-Host "🧪 Running Cypress tests..."
+        Push-Location "tests/Cypress.Tests"
+        try {
+          npx cypress run --browser chrome
+        } finally {
+          Pop-Location
+          Stop-Process -Id $invProc.Id,$ordProc.Id,$webProc.Id -Force -EA SilentlyContinue
+          Write-Host "✅ Services stopped"
+        }
+      displayName: '🧪 Start Services & Run Tests'
+      workingDirectory: '$(Build.SourcesDirectory)'
+      env:
+        CYPRESS_baseUrl: 'http://127.0.0.1:5002'
+        CYPRESS_CACHE_FOLDER: $(Pipeline.Workspace)/.cypress-cache
+
+    - task: PublishTestResults@2
+      condition: always()
+      inputs:
+        testResultsFormat: 'JUnit'
+        testResultsFiles: 'tests/Cypress.Tests/cypress/results/*.xml'
+        failTaskOnFailedTests: true
+      displayName: '📊 Publish Cypress Test Results'
+
+    - pwsh: |
+        $videosPath = "tests/Cypress.Tests/cypress/videos"
+        $screenshotsPath = "tests/Cypress.Tests/cypress/screenshots"
+        
+        if (Test-Path $videosPath) {
+          Write-Host "✅ Videos directory exists, will be published"
+        } else {
+          Write-Host "⚠️ Videos directory not found, creating empty placeholder"
+          New-Item -ItemType Directory -Path $videosPath -Force | Out-Null
+          "No videos recorded" | Out-File "$videosPath/README.txt"
+        }
+        
+        if (Test-Path $screenshotsPath) {
+          Write-Host "✅ Screenshots directory exists"
+        } else {
+          Write-Host "⚠️ Screenshots directory not found, creating empty placeholder"
+          New-Item -ItemType Directory -Path $screenshotsPath -Force | Out-Null
+          "No screenshots recorded" | Out-File "$screenshotsPath/README.txt"
+        }
+      displayName: '📁 Prepare Cypress Artifacts'
+      condition: always()
+
+    - task: PublishBuildArtifacts@1
+      condition: always()
+      inputs:
+        PathtoPublish: 'tests/Cypress.Tests/cypress/videos'
+        ArtifactName: 'cypress-videos'
+      displayName: '📁 Publish Cypress Videos'
+
+    - task: PublishBuildArtifacts@1
+      condition: always()
+      inputs:
+        PathtoPublish: 'tests/Cypress.Tests/cypress/screenshots'
+        ArtifactName: 'cypress-screenshots'
+      displayName: '📁 Publish Cypress Screenshots'
+
+  # ==================== SELENIUM E2E ====================
+  - job: Selenium_Test_Job
+    displayName: '🔬 Selenium Tests'
+    steps:
+    - checkout: none
+
+    - task: UseDotNet@2
+      inputs:
+        packageType: 'sdk'
+        version: '8.x'
+      displayName: '⚙️ Setup .NET SDK'
+
+    # ⚡ Download pre-built binaries
+    - task: DownloadPipelineArtifact@2
+      inputs:
+        artifact: 'source-with-binaries'
+        path: '$(Build.SourcesDirectory)'
+      displayName: '⚡ Download Built Source'
+
+    - pwsh: |
+        Write-Host "🚀 Starting services..."
+        $env:ASPNETCORE_ENVIRONMENT = "Development"
+
+        $invProc = Start-Process dotnet -ArgumentList "run","--project","src/InventoryService.Api/InventoryService.Api.csproj","--configuration","$(buildConfiguration)","--no-build","--urls=http://127.0.0.1:5001" -PassThru -RedirectStandardOutput inv.log -RedirectStandardError inv_err.log
+        $ordProc = Start-Process dotnet -ArgumentList "run","--project","src/OrderService.Api/OrderService.Api.csproj","--configuration","$(buildConfiguration)","--no-build","--urls=http://127.0.0.1:5000" -PassThru -RedirectStandardOutput ord.log -RedirectStandardError ord_err.log
+        $webProc = Start-Process dotnet -ArgumentList "run","--project","src/OrderWeb.Mvc/OrderWeb.Mvc.csproj","--configuration","$(buildConfiguration)","--no-build","--urls=http://127.0.0.1:5002" -PassThru -RedirectStandardOutput web.log -RedirectStandardError web_err.log
+
+        $maxWait = 90; $elapsed = 0
+        while ($elapsed -lt $maxWait) {
+          Start-Sleep -Seconds 2; $elapsed += 2
+          $webOk = $invOk = $ordOk = $false
+          try { Invoke-WebRequest "http://127.0.0.1:5002" -TimeoutSec 2 -UseBasicParsing -EA Stop | Out-Null; $webOk = $true } catch {}
+          try { Invoke-WebRequest "http://127.0.0.1:5001/api/inventory" -TimeoutSec 2 -UseBasicParsing -EA Stop | Out-Null; $invOk = $true } catch {}
+          try { Invoke-WebRequest "http://127.0.0.1:5000/swagger/index.html" -TimeoutSec 2 -UseBasicParsing -EA Stop | Out-Null; $ordOk = $true } catch {}
+          if ($webOk -and $invOk -and $ordOk) { Write-Host "✅ All services ready in $elapsed`s"; break }
+          Write-Host "[$elapsed`s] Web:$(if($webOk){'✅'}else{'⏳'}) Inv:$(if($invOk){'✅'}else{'⏳'}) Ord:$(if($ordOk){'✅'}else{'⏳'})"
+        }
+        if (-not ($webOk -and $invOk -and $ordOk)) { Get-Content inv_err.log,ord_err.log,web_err.log -EA SilentlyContinue; exit 1 }
+
+        Write-Host "🧪 Running Selenium tests..."
+        $testResult = 0
+        try {
+          dotnet test tests/Selenium.Tests/Selenium.Tests.csproj --configuration $(buildConfiguration) --no-build --logger "trx;LogFileName=selenium_results.trx"
+          $testResult = $LASTEXITCODE
+        } finally {
+          Stop-Process -Id $invProc.Id,$ordProc.Id,$webProc.Id -Force -EA SilentlyContinue
+          Write-Host "✅ Services stopped"
+        }
+        exit $testResult
+      displayName: '🧪 Start Services & Run Tests'
+      workingDirectory: '$(Build.SourcesDirectory)'
+      env:
+        HEADLESS_MODE: 'true'
+
+    - task: PublishTestResults@2
+      condition: always()
+      inputs:
+        testResultsFormat: 'VSTest'
+        testResultsFiles: '**/selenium_results.trx'
+        failTaskOnFailedTests: true
+      displayName: '📊 Publish Selenium Test Results'
+
+    - pwsh: |
+        Get-Content web.log,ord.log,inv.log -Tail 30 -EA SilentlyContinue
+      displayName: '📜 Service Logs (Debug)'
+      condition: failed()
+      workingDirectory: '$(Build.SourcesDirectory)'
+
