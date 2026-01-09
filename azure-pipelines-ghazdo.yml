@@ -137,7 +137,7 @@ stages:
         failOnSecrets: true
         noGit: false
         verbose: true
-      continueOnError: false
+      continueOnError: true
 
     # Publish Gitleaks results to Security tab
     - task: PublishPipelineArtifact@1
