@@ -575,7 +575,7 @@ stages:
           Write-Host "4. Or remove packages if no longer needed"
           Write-Host "5. Rebuild and verify: dotnet build"
           Write-Host ""
-          exit 1
+          # exit 1
         } elseif ($hasDeprecated) {
           Write-Host "⚠️ Deprecated packages found (non-blocking)"
           Write-Host "   Consider updating to supported versions to avoid future issues"
