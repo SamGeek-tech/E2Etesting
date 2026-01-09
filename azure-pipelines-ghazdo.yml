@@ -140,14 +140,12 @@ stages:
       continueOnError: false
 
     # Publish Gitleaks results to Security tab
-    - task: PublishSecurityAnalysisLogs@3
+    - task: PublishPipelineArtifact@1
       displayName: '📊 Publish Gitleaks Scan Results'
       inputs:
-        ArtifactsName: 'GitleaksResults'
-        ArtifactsType: 'Container'
-        ArtifactsPath: '$(Build.ArtifactStagingDirectory)'
+        targetPath: '$(Build.ArtifactStagingDirectory)'
+        artifact: 'GitleaksResults'
       condition: always()
-      continueOnError: true
     
     # - task: AdvancedSecurity-Codeql-Init@1
     #   displayName: Initialize CodeQL
