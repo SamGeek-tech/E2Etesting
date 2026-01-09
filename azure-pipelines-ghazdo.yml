@@ -119,6 +119,117 @@ stages:
         Write-Host "Repository: $(Build.Repository.Name)"
         Write-Host "=========================================="
       displayName: '📋 Code Quality Info'
+    
+    - task: AdvancedSecurity-Codeql-Init@1
+      displayName: Initialize CodeQL
+      inputs:
+        languages: 'csharp, javascript' 
+        buildtype: 'none'
+
+    - task: AdvancedSecurity-Codeql-Analyze@1
+      displayName: Perform CodeQL Analysis
+
+    # GitHub Advanced Security - Dependency Scanning
+    - task: AdvancedSecurity-Dependency-Scanning@1
+      displayName: '🔒 GitHub Advanced Security - Dependency Scanning'
+      inputs:
+        scanMode: 'all'
+        failOnCVEs: true
+        severityThreshold: 'high'
+        generateSarif: true
+        sarifOutputPath: '$(Build.ArtifactStagingDirectory)/dependency-scan-results.sarif'
+      continueOnError: true
+
+    # Enhanced Dependency Scanning (complements GitHub Advanced Security)
+    - pwsh: |
+        Write-Host "=========================================="
+        Write-Host "🔒 ENHANCED DEPENDENCY SCANNING"
+        Write-Host "=========================================="
+        Write-Host "Performing comprehensive dependency analysis..."
+        Write-Host ""
+        
+        # Ensure packages are restored
+        Write-Host "📦 Restoring packages for dependency analysis..."
+        dotnet restore --verbosity quiet 2>&1 | Out-Null
+        
+        # Get all project files
+        $projectFiles = Get-ChildItem -Path . -Filter "*.csproj" -Recurse | 
+            Where-Object { $_.FullName -notlike "*\bin\*" -and $_.FullName -notlike "*\obj\*" }
+        
+        Write-Host "Found $($projectFiles.Count) project file(s) to analyze"
+        Write-Host ""
+        
+        # Analyze each project
+        $allVulnerabilities = @()
+        $allDeprecated = @()
+        $allOutdated = @()
+        
+        foreach ($project in $projectFiles) {
+          $projectName = $project.Name
+          Write-Host "Analyzing: $projectName"
+          
+          # Check for vulnerable packages
+          $vulnOutput = dotnet list "$($project.FullName)" package --vulnerable --include-transitive 2>&1 | Out-String
+          if ($vulnOutput -match "vulnerable|CVE") {
+            Write-Host "  ⚠️ Vulnerabilities found in $projectName"
+            $allVulnerabilities += "  Project: $projectName`n$vulnOutput"
+          }
+          
+          # Check for deprecated packages
+          $depOutput = dotnet list "$($project.FullName)" package --deprecated --include-transitive 2>&1 | Out-String
+          if ($depOutput -match "deprecated") {
+            Write-Host "  ⚠️ Deprecated packages in $projectName"
+            $allDeprecated += "  Project: $projectName`n$depOutput"
+          }
+          
+          # Check for outdated packages
+          $outdatedOutput = dotnet list "$($project.FullName)" package --outdated --include-transitive 2>&1 | Out-String
+          if ($outdatedOutput -match "outdated|latest") {
+            Write-Host "  ℹ️ Outdated packages in $projectName"
+            $allOutdated += "  Project: $projectName`n$outdatedOutput"
+          }
+        }
+        
+        Write-Host ""
+        Write-Host "=========================================="
+        Write-Host "DEPENDENCY SCANNING SUMMARY"
+        Write-Host "=========================================="
+        
+        if ($allVulnerabilities.Count -gt 0) {
+          Write-Host "❌ VULNERABILITIES DETECTED:"
+          $allVulnerabilities | ForEach-Object { Write-Host $_ }
+          Write-Host ""
+        }
+        
+        if ($allDeprecated.Count -gt 0) {
+          Write-Host "⚠️ DEPRECATED PACKAGES:"
+          $allDeprecated | ForEach-Object { Write-Host $_ }
+          Write-Host ""
+        }
+        
+        if ($allOutdated.Count -gt 0) {
+          Write-Host "ℹ️ OUTDATED PACKAGES (consider updating):"
+          $allOutdated | ForEach-Object { Write-Host $_ }
+          Write-Host ""
+        }
+        
+        if ($allVulnerabilities.Count -eq 0 -and $allDeprecated.Count -eq 0) {
+          Write-Host "✅ No critical dependency issues found"
+        }
+        
+        Write-Host "=========================================="
+      displayName: '🔒 Enhanced Dependency Scanning'
+      continueOnError: true
+
+    # Publish dependency scan results (if GitHub Advanced Security task created SARIF)
+    - task: PublishSecurityAnalysisLogs@3
+      displayName: '📊 Publish Dependency Scan Results'
+      inputs:
+        ArtifactsName: 'DependencyScanResults'
+        ArtifactsType: 'Container'
+        ArtifactsPath: '$(Build.ArtifactStagingDirectory)'
+      condition: always()
+      continueOnError: true
 
     # Check for build warnings
     - pwsh: |
@@ -484,6 +595,8 @@ stages:
         Write-Host "=========================================="
         Write-Host "✓ Code compiles successfully"
         Write-Host "✓ Build warnings/errors checked"
+        Write-Host "✓ CodeQL analysis completed"
+        Write-Host "✓ Dependency scanning completed"
         Write-Host "✓ Security scan completed"
         Write-Host "✓ NuGet package security checked"
         Write-Host "✓ Code structure validated"
