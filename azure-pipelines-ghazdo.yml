@@ -119,6 +119,35 @@ stages:
         Write-Host "Repository: $(Build.Repository.Name)"
         Write-Host "=========================================="
       displayName: '📋 Code Quality Info'
+
+    # Gitleaks - Secret Scanning Tool
+    # Benefits:
+    # - Detects hardcoded secrets, API keys, passwords, tokens
+    # - Scans entire repository history (can detect secrets in commits)
+    # - Supports 100+ secret types (AWS, Azure, GitHub, etc.)
+    # - Fast and lightweight
+    # - Prevents secrets from being committed to repository
+    - task: Gitleaks@8
+      displayName: '🔒 Gitleaks - Secret Scanning'
+      inputs:
+        scanMode: 'repository'
+        reportFormat: 'sarif'
+        sarifReportPath: '$(Build.ArtifactStagingDirectory)/gitleaks-report.sarif'
+        severityThreshold: 'high'
+        failOnSecrets: true
+        noGit: false
+        verbose: true
+      continueOnError: false
+
+    # Publish Gitleaks results to Security tab
+    - task: PublishSecurityAnalysisLogs@3
+      displayName: '📊 Publish Gitleaks Scan Results'
+      inputs:
+        ArtifactsName: 'GitleaksResults'
+        ArtifactsType: 'Container'
+        ArtifactsPath: '$(Build.ArtifactStagingDirectory)'
+      condition: always()
+      continueOnError: true
     
     # - task: AdvancedSecurity-Codeql-Init@1
     #   displayName: Initialize CodeQL
@@ -595,8 +624,7 @@ stages:
         Write-Host "=========================================="
         Write-Host "✓ Code compiles successfully"
         Write-Host "✓ Build warnings/errors checked"
-        Write-Host "✓ CodeQL analysis completed"
-        Write-Host "✓ Dependency scanning completed"
+        Write-Host "✓ Gitleaks secret scanning completed"
         Write-Host "✓ Security scan completed"
         Write-Host "✓ NuGet package security checked"
         Write-Host "✓ Code structure validated"
