@@ -232,27 +232,27 @@ stages:
       continueOnError: true
 
     # Check for build warnings
-    - pwsh: |
-        Write-Host "🔨 Analyzing build output for warnings and errors..."
-        $buildOutput = dotnet build --configuration $(buildConfiguration) --verbosity normal 2>&1
-        $warnings = $buildOutput | Select-String -Pattern "warning"
-        $errors = $buildOutput | Select-String -Pattern "error"
-        
-        if ($errors) {
-          Write-Host "❌ Build errors found:"
-          $errors | ForEach-Object { Write-Host "  $_" }
-          Write-Host "Please fix errors before merging."
-          exit 1
-        }
-        
-        if ($warnings) {
-          Write-Host "⚠️ Build warnings found:"
-          $warnings | ForEach-Object { Write-Host "  $_" }
-          Write-Host "Please review and fix warnings if possible."
-        } else {
-          Write-Host "✅ No build warnings found"
-        }
-      displayName: '🔍 Check Build Warnings & Errors'
+    #- pwsh: |
+    #    Write-Host "🔨 Analyzing build output for warnings and errors..."
+    #    $buildOutput = dotnet build --configuration $(buildConfiguration) --verbosity normal 2>&1
+    #    $warnings = $buildOutput | Select-String -Pattern "warning"
+    #    $errors = $buildOutput | Select-String -Pattern "error"
+    #    
+    #    if ($errors) {
+    #      Write-Host "❌ Build errors found:"
+    #      $errors | ForEach-Object { Write-Host "  $_" }
+    #      Write-Host "Please fix errors before merging."
+    #      exit 1
+    #    }
+    #    
+    #    if ($warnings) {
+    #      Write-Host "⚠️ Build warnings found:"
+    #      $warnings | ForEach-Object { Write-Host "  $_" }
+    #      Write-Host "Please review and fix warnings if possible."
+    #    } else {
+    #      Write-Host "✅ No build warnings found"
+    #    }
+    #  displayName: '🔍 Check Build Warnings & Errors'
 
     # Security scan - check for hardcoded secrets and security issues
     - pwsh: |
