@@ -130,7 +130,7 @@ stages:
     - task: Gitleaks@3
       displayName: '🔒 Gitleaks - Secret Scanning'
       inputs:
-        scanMode: 'repository'
+        scanMode: 'smart'
         reportFormat: 'sarif'
         sarifReportPath: '$(Build.ArtifactStagingDirectory)/gitleaks-report.sarif'
         severityThreshold: 'high'
