@@ -127,7 +127,7 @@ stages:
     # - Supports 100+ secret types (AWS, Azure, GitHub, etc.)
     # - Fast and lightweight
     # - Prevents secrets from being committed to repository
-    - task: Gitleaks@8
+    - task: Gitleaks@2
       displayName: '🔒 Gitleaks - Secret Scanning'
       inputs:
         scanMode: 'repository'
