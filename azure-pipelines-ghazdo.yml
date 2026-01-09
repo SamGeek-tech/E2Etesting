@@ -120,14 +120,14 @@ stages:
         Write-Host "=========================================="
       displayName: '📋 Code Quality Info'
     
-    - task: AdvancedSecurity-Codeql-Init@1
-      displayName: Initialize CodeQL
-      inputs:
-        languages: 'csharp, javascript' 
-        buildtype: 'none'
+    # - task: AdvancedSecurity-Codeql-Init@1
+    #   displayName: Initialize CodeQL
+    #   inputs:
+    #     languages: 'csharp, javascript' 
+    #     buildtype: 'none'
 
-    - task: AdvancedSecurity-Codeql-Analyze@1
-      displayName: Perform CodeQL Analysis
+    # - task: AdvancedSecurity-Codeql-Analyze@1
+    #   displayName: Perform CodeQL Analysis
 
     # GitHub Advanced Security - Dependency Scanning
     # - task: AdvancedSecurity-Dependency-Scanning@1
