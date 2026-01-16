@@ -1,4 +1,5 @@
 using System.Net;
+using System.Threading;
 using FluentAssertions;
 using OrderService.Contract.Tests.Sdk;
 using PactNet;
@@ -11,10 +12,23 @@ namespace OrderService.Contract.Tests;
 
 public class OrderClientTests
 {
-    private readonly IPactBuilderV3 _pactBuilder;
+    private readonly IPactBuilderV4 _pactBuilder;
+    private static int _pactFileCleaned;
 
     public OrderClientTests(ITestOutputHelper output)
     {
+        // Clean pact file once per test run to avoid stale/duplicate interactions
+        // (PactNet merges interactions into existing pact files; it does not delete old interactions automatically)
+        if (Interlocked.Exchange(ref _pactFileCleaned, 1) == 0)
+        {
+            var pactDir = Path.Combine(Directory.GetCurrentDirectory(), "..", "..", "..", "pacts");
+            var pactFile = Path.Combine(pactDir, "OrderClientSdk-OrderServiceApi.json");
+            if (File.Exists(pactFile))
+            {
+                File.Delete(pactFile);
+            }
+        }
+
         var config = new PactConfig
         {
             PactDir = Path.Combine(Directory.GetCurrentDirectory(), "..", "..", "..", "pacts"),
@@ -22,7 +36,7 @@ public class OrderClientTests
             LogLevel = PactLogLevel.Information
         };
 
-        var pact = Pact.V3("OrderClientSdk", "OrderServiceApi", config);
+        var pact = Pact.V4("OrderClientSdk", "OrderServiceApi", config);
         _pactBuilder = pact.WithHttpInteractions();
     }
 

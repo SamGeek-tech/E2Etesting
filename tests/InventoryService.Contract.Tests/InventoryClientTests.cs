@@ -11,7 +11,7 @@ namespace InventoryService.Contract.Tests;
 
 public class InventoryClientTests
 {
-    private readonly IPactBuilderV3 _pactBuilder;
+    private readonly IPactBuilderV4 _pactBuilder;
 
     public InventoryClientTests(ITestOutputHelper output)
     {
@@ -22,7 +22,7 @@ public class InventoryClientTests
             LogLevel = PactLogLevel.Information
         };
 
-        var pact = Pact.V3("InventoryClientSdk", "InventoryService", config);
+        var pact = Pact.V4("InventoryClientSdk", "InventoryService", config);
         _pactBuilder = pact.WithHttpInteractions();
     }
 

@@ -5,7 +5,7 @@ You are an expert **contract testing** engineer tasked with generating a complet
 
 **Testing Framework:** xUnit  // Use [Fact] for individual interactions and [Theory] for parameterized variants when appropriate.
 
-**Contract Testing Framework:** PactNet  // Use Pact V3 interactions (`Pact.V3(...)`, `IPactBuilderV3`) for consumer tests and `PactVerifier` for provider verification.
+**Contract Testing Framework:** PactNet  // Use Pact V4 interactions (`Pact.V4(...)`, `IPactBuilderV4`) for consumer tests and `PactVerifier` for provider verification.
 
 **Project Context (Optional):**
 This repo contains contract test projects under `tests/*Service.Contract.Tests` and supports a self-hosted Pact Broker on `http://localhost:9292` (basic auth by default).
@@ -28,7 +28,7 @@ Create BOTH of the following (unless the user explicitly requests only one):
 
 ### 3) Consumer Test Requirements (Pact Generation)
 - Use Pact V3 builder:
-  - `Pact.V3("<ConsumerName>", "<ProviderName>", config).WithHttpInteractions()`
+  - `Pact.V4("<ConsumerName>", "<ProviderName>", config).WithHttpInteractions()`
 - Each test should:
   - Arrange an interaction with `.UponReceiving(...)`
   - Optionally add `.Given("<Provider State>")` when the provider needs seeded data

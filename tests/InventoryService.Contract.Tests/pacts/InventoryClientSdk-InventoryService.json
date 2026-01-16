@@ -5,27 +5,40 @@
   "interactions": [
     {
       "description": "A request to create a product",
+      "pending": false,
       "request": {
         "body": {
-          "name": "New Product",
-          "price": 99.99,
-          "stockQuantity": 50
+          "content": {
+            "name": "New Product",
+            "price": 99.99,
+            "stockQuantity": 50
+          },
+          "contentType": "application/json",
+          "encoded": false
         },
         "headers": {
-          "Content-Type": "application/json"
+          "Content-Type": [
+            "application/json"
+          ]
         },
         "method": "POST",
         "path": "/api/inventory"
       },
       "response": {
         "body": {
-          "id": 1,
-          "name": "New Product",
-          "price": 99.99,
-          "stockQuantity": 50
+          "content": {
+            "id": 1,
+            "name": "New Product",
+            "price": 99.99,
+            "stockQuantity": 50
+          },
+          "contentType": "application/json",
+          "encoded": false
         },
         "headers": {
-          "Content-Type": "application/json; charset=utf-8"
+          "Content-Type": [
+            "application/json; charset=utf-8"
+          ]
         },
         "matchingRules": {
           "body": {
@@ -40,10 +53,12 @@
           }
         },
         "status": 201
-      }
+      },
+      "type": "Synchronous/HTTP"
     },
     {
       "description": "A request to delete an inventory item",
+      "pending": false,
       "providerStates": [
         {
           "name": "Inventory item 1 exists"
@@ -55,10 +70,12 @@
       },
       "response": {
         "status": 204
-      }
+      },
+      "type": "Synchronous/HTTP"
     },
     {
       "description": "A request to get a specific product",
+      "pending": false,
       "providerStates": [
         {
           "name": "Product 1 exists"
@@ -70,13 +87,19 @@
       },
       "response": {
         "body": {
-          "id": 1,
-          "name": "Product Name",
-          "price": 10.0,
-          "stockQuantity": 100
+          "content": {
+            "id": 1,
+            "name": "Product Name",
+            "price": 10.0,
+            "stockQuantity": 100
+          },
+          "contentType": "application/json",
+          "encoded": false
         },
         "headers": {
-          "Content-Type": "application/json; charset=utf-8"
+          "Content-Type": [
+            "application/json; charset=utf-8"
+          ]
         },
         "matchingRules": {
           "body": {
@@ -107,10 +130,12 @@
           }
         },
         "status": 200
-      }
+      },
+      "type": "Synchronous/HTTP"
     },
     {
       "description": "A request to get all products",
+      "pending": false,
       "providerStates": [
         {
           "name": "Products exist"
@@ -121,16 +146,22 @@
         "path": "/api/inventory"
       },
       "response": {
-        "body": [
-          {
-            "id": 1,
-            "name": "Product Name",
-            "price": 10.0,
-            "stockQuantity": 100
-          }
-        ],
+        "body": {
+          "content": [
+            {
+              "id": 1,
+              "name": "Product Name",
+              "price": 10.0,
+              "stockQuantity": 100
+            }
+          ],
+          "contentType": "application/json",
+          "encoded": false
+        },
         "headers": {
-          "Content-Type": "application/json; charset=utf-8"
+          "Content-Type": [
+            "application/json; charset=utf-8"
+          ]
         },
         "matchingRules": {
           "body": {
@@ -178,10 +209,12 @@
           }
         },
         "status": 200
-      }
+      },
+      "type": "Synchronous/HTTP"
     },
     {
       "description": "A request to reserve stock",
+      "pending": false,
       "providerStates": [
         {
           "name": "Product 1 has sufficient stock"
@@ -189,18 +222,25 @@
       ],
       "request": {
         "body": {
-          "productId": 1,
-          "quantity": 1
+          "content": {
+            "productId": 1,
+            "quantity": 1
+          },
+          "contentType": "application/json",
+          "encoded": false
         },
         "headers": {
-          "Content-Type": "application/json"
+          "Content-Type": [
+            "application/json"
+          ]
         },
         "method": "POST",
         "path": "/api/inventory/reserve"
       },
       "response": {
         "status": 200
-      }
+      },
+      "type": "Synchronous/HTTP"
     }
   ],
   "metadata": {
@@ -209,7 +249,7 @@
       "models": "1.2.8"
     },
     "pactSpecification": {
-      "version": "3.0.0"
+      "version": "4.0"
     }
   },
   "provider": {

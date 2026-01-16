@@ -5,167 +5,7 @@
   "interactions": [
     {
       "description": "A request to create an order",
-      "request": {
-        "body": {
-          "items": [
-            {
-              "productId": 1,
-              "productName": "Product",
-              "quantity": 1,
-              "unitPrice": 10.0
-            }
-          ]
-        },
-        "headers": {
-          "Authorization": "Bearer .*",
-          "Content-Type": "application/json"
-        },
-        "matchingRules": {
-          "body": {
-            "$.items": {
-              "combine": "AND",
-              "matchers": [
-                {
-                  "match": "type",
-                  "min": 1
-                }
-              ]
-            },
-            "$.items[*].productId": {
-              "combine": "AND",
-              "matchers": [
-                {
-                  "match": "integer"
-                }
-              ]
-            },
-            "$.items[*].productName": {
-              "combine": "AND",
-              "matchers": [
-                {
-                  "match": "type"
-                }
-              ]
-            },
-            "$.items[*].quantity": {
-              "combine": "AND",
-              "matchers": [
-                {
-                  "match": "integer"
-                }
-              ]
-            },
-            "$.items[*].unitPrice": {
-              "combine": "AND",
-              "matchers": [
-                {
-                  "match": "decimal"
-                }
-              ]
-            }
-          },
-          "header": {
-            "Authorization": {
-              "combine": "AND",
-              "matchers": [
-                {
-                  "match": "regex",
-                  "regex": "Bearer test-token"
-                }
-              ]
-            }
-          }
-        },
-        "method": "POST",
-        "path": "/api/orders"
-      },
-      "response": {
-        "body": {
-          "id": 1,
-          "items": [
-            {
-              "id": 1,
-              "productId": 1,
-              "productName": "Product",
-              "quantity": 1,
-              "totalPrice": 10.0,
-              "unitPrice": 10.0
-            }
-          ],
-          "orderDate": "2024-01-01T12:00:00Z",
-          "status": "Pending",
-          "totalAmount": 10.0,
-          "userEmail": "user@example.com"
-        },
-        "headers": {
-          "Content-Type": "application/json; charset=utf-8"
-        },
-        "matchingRules": {
-          "body": {
-            "$.id": {
-              "combine": "AND",
-              "matchers": [
-                {
-                  "match": "integer"
-                }
-              ]
-            },
-            "$.items": {
-              "combine": "AND",
-              "matchers": [
-                {
-                  "match": "type",
-                  "min": 1
-                }
-              ]
-            },
-            "$.items[*].id": {
-              "combine": "AND",
-              "matchers": [
-                {
-                  "match": "integer"
-                }
-              ]
-            },
-            "$.orderDate": {
-              "combine": "AND",
-              "matchers": [
-                {
-                  "match": "type"
-                }
-              ]
-            },
-            "$.status": {
-              "combine": "AND",
-              "matchers": [
-                {
-                  "match": "type"
-                }
-              ]
-            },
-            "$.totalAmount": {
-              "combine": "AND",
-              "matchers": [
-                {
-                  "match": "decimal"
-                }
-              ]
-            },
-            "$.userEmail": {
-              "combine": "AND",
-              "matchers": [
-                {
-                  "match": "type"
-                }
-              ]
-            }
-          }
-        },
-        "status": 201
-      }
-    },
-    {
-      "description": "A request to create an order",
+      "pending": false,
       "providerStates": [
         {
           "name": "Inventory is available for products"
@@ -173,18 +13,26 @@
       ],
       "request": {
         "body": {
-          "items": [
-            {
-              "productId": 1,
-              "productName": "Product",
-              "quantity": 1,
-              "unitPrice": 10.0
-            }
-          ]
+          "content": {
+            "items": [
+              {
+                "productId": 1,
+                "productName": "Product",
+                "quantity": 1,
+                "unitPrice": 10.0
+              }
+            ]
+          },
+          "contentType": "application/json",
+          "encoded": false
         },
         "headers": {
-          "Authorization": "Bearer .*",
-          "Content-Type": "application/json"
+          "Authorization": [
+            "Bearer .*"
+          ],
+          "Content-Type": [
+            "application/json"
+          ]
         },
         "matchingRules": {
           "body": {
@@ -247,24 +95,30 @@
       },
       "response": {
         "body": {
-          "id": 1,
-          "items": [
-            {
-              "id": 1,
-              "productId": 1,
-              "productName": "Product",
-              "quantity": 1,
-              "totalPrice": 10.0,
-              "unitPrice": 10.0
-            }
-          ],
-          "orderDate": "2024-01-01T12:00:00Z",
-          "status": "Pending",
-          "totalAmount": 10.0,
-          "userEmail": "user@example.com"
+          "content": {
+            "id": 1,
+            "items": [
+              {
+                "id": 1,
+                "productId": 1,
+                "productName": "Product",
+                "quantity": 1,
+                "totalPrice": 10.0,
+                "unitPrice": 10.0
+              }
+            ],
+            "orderDate": "2024-01-01T12:00:00Z",
+            "status": "Pending",
+            "totalAmount": 10.0,
+            "userEmail": "user@example.com"
+          },
+          "contentType": "application/json",
+          "encoded": false
         },
         "headers": {
-          "Content-Type": "application/json; charset=utf-8"
+          "Content-Type": [
+            "application/json; charset=utf-8"
+          ]
         },
         "matchingRules": {
           "body": {
@@ -328,10 +182,12 @@
           }
         },
         "status": 201
-      }
+      },
+      "type": "Synchronous/HTTP"
     },
     {
       "description": "A request to get a specific order",
+      "pending": false,
       "providerStates": [
         {
           "name": "Order 1 exists for user"
@@ -339,7 +195,9 @@
       ],
       "request": {
         "headers": {
-          "Authorization": "Bearer .*"
+          "Authorization": [
+            "Bearer .*"
+          ]
         },
         "matchingRules": {
           "header": {
@@ -359,24 +217,30 @@
       },
       "response": {
         "body": {
-          "id": 1,
-          "items": [
-            {
-              "id": 1,
-              "productId": 1,
-              "productName": "Product",
-              "quantity": 1,
-              "totalPrice": 100.0,
-              "unitPrice": 100.0
-            }
-          ],
-          "orderDate": "2024-01-01T12:00:00Z",
-          "status": "Pending",
-          "totalAmount": 100.0,
-          "userEmail": "user@example.com"
+          "content": {
+            "id": 1,
+            "items": [
+              {
+                "id": 1,
+                "productId": 1,
+                "productName": "Product",
+                "quantity": 1,
+                "totalPrice": 100.0,
+                "unitPrice": 100.0
+              }
+            ],
+            "orderDate": "2024-01-01T12:00:00Z",
+            "status": "Pending",
+            "totalAmount": 100.0,
+            "userEmail": "user@example.com"
+          },
+          "contentType": "application/json",
+          "encoded": false
         },
         "headers": {
-          "Content-Type": "application/json; charset=utf-8"
+          "Content-Type": [
+            "application/json; charset=utf-8"
+          ]
         },
         "matchingRules": {
           "body": {
@@ -472,10 +336,12 @@
           }
         },
         "status": 200
-      }
+      },
+      "type": "Synchronous/HTTP"
     },
     {
       "description": "A request to get all orders",
+      "pending": false,
       "providerStates": [
         {
           "name": "Orders exist for user"
@@ -483,7 +349,9 @@
       ],
       "request": {
         "headers": {
-          "Authorization": "Bearer .*"
+          "Authorization": [
+            "Bearer .*"
+          ]
         },
         "matchingRules": {
           "header": {
@@ -502,27 +370,33 @@
         "path": "/api/orders"
       },
       "response": {
-        "body": [
-          {
-            "id": 1,
-            "items": [
-              {
-                "id": 1,
-                "productId": 1,
-                "productName": "Product",
-                "quantity": 1,
-                "totalPrice": 100.0,
-                "unitPrice": 100.0
-              }
-            ],
-            "orderDate": "2024-01-01T12:00:00Z",
-            "status": "Pending",
-            "totalAmount": 100.0,
-            "userEmail": "user@example.com"
-          }
-        ],
+        "body": {
+          "content": [
+            {
+              "id": 1,
+              "items": [
+                {
+                  "id": 1,
+                  "productId": 1,
+                  "productName": "Product",
+                  "quantity": 1,
+                  "totalPrice": 100.0,
+                  "unitPrice": 100.0
+                }
+              ],
+              "orderDate": "2024-01-01T12:00:00Z",
+              "status": "Pending",
+              "totalAmount": 100.0,
+              "userEmail": "user@example.com"
+            }
+          ],
+          "contentType": "application/json",
+          "encoded": false
+        },
         "headers": {
-          "Content-Type": "application/json; charset=utf-8"
+          "Content-Type": [
+            "application/json; charset=utf-8"
+          ]
         },
         "matchingRules": {
           "body": {
@@ -635,23 +509,32 @@
           }
         },
         "status": 200
-      }
+      },
+      "type": "Synchronous/HTTP"
     },
     {
       "description": "A request to health check",
+      "pending": false,
       "request": {
         "method": "GET",
         "path": "/api/orders/health"
       },
       "response": {
         "body": {
-          "status": "Healthy"
+          "content": {
+            "status": "Healthy"
+          },
+          "contentType": "application/json",
+          "encoded": false
         },
         "headers": {
-          "Content-Type": "application/json; charset=utf-8"
+          "Content-Type": [
+            "application/json; charset=utf-8"
+          ]
         },
         "status": 200
-      }
+      },
+      "type": "Synchronous/HTTP"
     }
   ],
   "metadata": {
@@ -660,7 +543,7 @@
       "models": "1.2.8"
     },
     "pactSpecification": {
-      "version": "3.0.0"
+      "version": "4.0"
     }
   },
   "provider": {
