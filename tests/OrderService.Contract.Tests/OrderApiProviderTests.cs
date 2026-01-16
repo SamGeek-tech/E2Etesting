@@ -90,7 +90,7 @@ public class OrderApiProviderTests : IDisposable
     public void EnsureOrderApiHonorsPactWithConsumer()
     {
         // Get broker credentials from environment variables
-        var pactBrokerUrl = Environment.GetEnvironmentVariable("PACT_BROKER_BASE_URL");
+        var pactBrokerUrlRaw = Environment.GetEnvironmentVariable("PACT_BROKER_BASE_URL");
         var pactBrokerToken = Environment.GetEnvironmentVariable("PACT_BROKER_TOKEN");
         var pactBrokerUsername = Environment.GetEnvironmentVariable("PACT_BROKER_USERNAME");
         var pactBrokerPassword = Environment.GetEnvironmentVariable("PACT_BROKER_PASSWORD");
@@ -105,12 +105,32 @@ public class OrderApiProviderTests : IDisposable
 
         using var verifier = new PactVerifier("OrderServiceApi", config);
         
+        static string? NormalizeBrokerUrl(string? url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+                return null;
+
+            url = url.Trim();
+
+            // CI variables sometimes leak through unexpanded like "$(PactBrokerUrl)"
+            if (url.Contains("$(") && url.Contains(")"))
+                return null;
+
+            // Accept host:port and normalize to http://host:port
+            if (!url.Contains("://", StringComparison.Ordinal))
+                url = "http://" + url;
+
+            return url;
+        }
+
+        var pactBrokerUrl = NormalizeBrokerUrl(pactBrokerUrlRaw);
+
         // Determine authentication method
         bool hasToken = !string.IsNullOrEmpty(pactBrokerToken);
         bool hasBasicAuth = !string.IsNullOrEmpty(pactBrokerUsername) && !string.IsNullOrEmpty(pactBrokerPassword);
         bool hasBroker = !string.IsNullOrEmpty(pactBrokerUrl) && (hasToken || hasBasicAuth);
         
-        if (hasBroker)
+        if (hasBroker && Uri.TryCreate(pactBrokerUrl, UriKind.Absolute, out var brokerUri))
         {
             // Fetch from Pact Broker (PactFlow or Self-Hosted)
             string brokerType = hasToken ? "PactFlow" : "Self-Hosted Broker";
@@ -120,7 +140,7 @@ public class OrderApiProviderTests : IDisposable
             
             verifier
                 .WithHttpEndpoint(new Uri(_providerUri))
-                .WithPactBrokerSource(new Uri(pactBrokerUrl), options =>
+                .WithPactBrokerSource(brokerUri, options =>
                 {
                     // Configure authentication
                     if (hasToken)
@@ -149,7 +169,14 @@ public class OrderApiProviderTests : IDisposable
         else
         {
             // Fallback to local file for local development
-            _output.WriteLine("Broker credentials not found. Using local pact file for verification.");
+            if (!string.IsNullOrWhiteSpace(pactBrokerUrlRaw))
+            {
+                _output.WriteLine($"Broker URL is missing/invalid, falling back to local pact file. Raw value: '{pactBrokerUrlRaw}'");
+            }
+            else
+            {
+                _output.WriteLine("Broker credentials not found. Using local pact file for verification.");
+            }
             _output.WriteLine("");
             _output.WriteLine("To use a broker, set:");
             _output.WriteLine("  - PactFlow: PACT_BROKER_BASE_URL and PACT_BROKER_TOKEN");
