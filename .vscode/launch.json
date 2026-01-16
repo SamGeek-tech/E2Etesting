@@ -1,6 +1,7 @@
 {
     "version": "0.2.0",
     "configurations": [
+    
       {
         "name": "Inventory API (.NET 8)",
         "type": "dotnet",
@@ -96,6 +97,80 @@
           "PWDEBUG": "1"
         },
         "console": "integratedTerminal"
+      },
+      {
+        "name": "Pact: OrderService Consumer Tests",
+        "type": "coreclr",
+        "request": "launch",
+        "program": "dotnet",
+        "args": [
+          "test",
+          "${workspaceFolder}/tests/OrderService.Contract.Tests/OrderService.Contract.Tests.csproj",
+          "--filter",
+          "OrderClientTests"
+        ],
+        "cwd": "${workspaceFolder}",
+        "console": "integratedTerminal",
+        "stopAtEntry": false
+      },
+      {
+        "name": "Pact: OrderService Provider Tests",
+        "type": "coreclr",
+        "request": "launch",
+        "program": "dotnet",
+        "args": [
+          "test",
+          "${workspaceFolder}/tests/OrderService.Contract.Tests/OrderService.Contract.Tests.csproj",
+          "--filter",
+          "OrderApiProviderTests"
+        ],
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "PACT_BROKER_BASE_URL": "http://localhost:9292",
+          "PACT_BROKER_USERNAME": "admin",
+          "PACT_BROKER_PASSWORD": "admin",
+          "PROVIDER_VERSION": "1.0.0",
+          "PUBLISH_VERIFICATION_RESULTS": "true"
+        },
+        "console": "integratedTerminal",
+        "stopAtEntry": false
+      },
+      {
+        "name": "Pact: InventoryService Consumer Tests",
+        "type": "coreclr",
+        "request": "launch",
+        "program": "dotnet",
+        "args": [
+          "test",
+          "${workspaceFolder}/tests/InventoryService.Contract.Tests/InventoryService.Contract.Tests.csproj",
+          "--filter",
+          "InventoryClientTests"
+        ],
+        "cwd": "${workspaceFolder}",
+        "console": "integratedTerminal",
+        "stopAtEntry": false
+      },
+      {
+        "name": "Pact: All Contract Tests",
+        "type": "coreclr",
+        "request": "launch",
+        "program": "dotnet",
+        "args": [
+          "test",
+          "${workspaceFolder}/E2Etesting.slnx",
+          "--filter",
+          "FullyQualifiedName~Contract.Tests"
+        ],
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "PACT_BROKER_BASE_URL": "http://localhost:9292",
+          "PACT_BROKER_USERNAME": "admin",
+          "PACT_BROKER_PASSWORD": "admin",
+          "PROVIDER_VERSION": "1.0.0",
+          "PUBLISH_VERIFICATION_RESULTS": "true"
+        },
+        "console": "integratedTerminal",
+        "stopAtEntry": false
       }
     ],
     "compounds": [
@@ -107,6 +182,14 @@
           "WebApp (.NET 8)"
         ],
         "stopAll": true
+      },
+      {
+        "name": "Pact: Run Consumer Tests (Generate Pacts)",
+        "configurations": [
+          "Pact: OrderService Consumer Tests",
+          "Pact: InventoryService Consumer Tests"
+        ],
+        "stopAll": false
       }
     ],
     "inputs": [

@@ -30,7 +30,17 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
+// Add Provider State Middleware for Contract Testing (must be before UseAuthorization)
+if (app.Environment.IsDevelopment())
+{
+    app.UseMiddleware<InventoryService.Api.Middleware.ProviderStateMiddleware>();
+}
+
 app.UseAuthorization();
+
 app.MapControllers();
 
 app.Run();
+
+// Expose Program class for integration/contract testing
+public partial class Program { }

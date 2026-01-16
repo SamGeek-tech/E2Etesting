@@ -1,6 +1,60 @@
 version: '3.8'
 
 services:
+  # PostgreSQL database for Pact Broker
+  postgres:
+    image: postgres:15-alpine
+    container_name: pact-broker-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: pact_broker
+      POSTGRES_PASSWORD: pact_broker_password
+      POSTGRES_DB: pact_broker
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pact_broker"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - pact-network
+
+  # Pact Broker - Self-hosted contract repository
+  pact-broker:
+    image: pactfoundation/pact-broker:latest
+    container_name: pact-broker
+    ports:
+      - "9292:9292"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PACT_BROKER_DATABASE_USERNAME: pact_broker
+      PACT_BROKER_DATABASE_PASSWORD: pact_broker_password
+      PACT_BROKER_DATABASE_HOST: postgres
+      PACT_BROKER_DATABASE_NAME: pact_broker
+      PACT_BROKER_PORT: '9292'
+      PACT_BROKER_BASE_URL: 'http://localhost:9292'
+      # Authentication (optional - comment out for no auth)
+      PACT_BROKER_BASIC_AUTH_USERNAME: admin
+      PACT_BROKER_BASIC_AUTH_PASSWORD: admin
+      PACT_BROKER_BASIC_AUTH_READ_ONLY_USERNAME: readonly
+      PACT_BROKER_BASIC_AUTH_READ_ONLY_PASSWORD: readonly
+      # Allow public read access (set to false for production)
+      PACT_BROKER_ALLOW_PUBLIC_READ: 'true'
+      # Logging
+      PACT_BROKER_LOG_LEVEL: INFO
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:9292/diagnostic/status/heartbeat"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - pact-network
+
+  # Application Services
   inventory-service:
     build:
       context: .
@@ -10,6 +64,8 @@ services:
     environment:
       - ASPNETCORE_URLS=http://+:8080
       - ASPNETCORE_ENVIRONMENT=Development
+    networks:
+      - pact-network
 
   order-service:
     build:
@@ -21,6 +77,8 @@ services:
       - ASPNETCORE_URLS=http://+:8080
       - ASPNETCORE_ENVIRONMENT=Development
       - Services__InventoryUrl=http://inventory-service:8080
+    networks:
+      - pact-network
 
   order-web:
     build:
@@ -33,3 +91,13 @@ services:
       - ASPNETCORE_ENVIRONMENT=Development
       - Services__OrderServiceUrl=http://order-service:8080
       - Services__InventoryServiceUrl=http://inventory-service:8080
+    networks:
+      - pact-network
+
+volumes:
+  postgres-data:
+    driver: local
+
+networks:
+  pact-network:
+    driver: bridge

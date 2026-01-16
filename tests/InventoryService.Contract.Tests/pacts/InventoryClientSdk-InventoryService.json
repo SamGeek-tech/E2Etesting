@@ -1,0 +1,218 @@
+{
+  "consumer": {
+    "name": "InventoryClientSdk"
+  },
+  "interactions": [
+    {
+      "description": "A request to create a product",
+      "request": {
+        "body": {
+          "name": "New Product",
+          "price": 99.99,
+          "stockQuantity": 50
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "method": "POST",
+        "path": "/api/inventory"
+      },
+      "response": {
+        "body": {
+          "id": 1,
+          "name": "New Product",
+          "price": 99.99,
+          "stockQuantity": 50
+        },
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "matchingRules": {
+          "body": {
+            "$.id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
+                }
+              ]
+            }
+          }
+        },
+        "status": 201
+      }
+    },
+    {
+      "description": "A request to delete an inventory item",
+      "providerStates": [
+        {
+          "name": "Inventory item 1 exists"
+        }
+      ],
+      "request": {
+        "method": "DELETE",
+        "path": "/api/inventory/1"
+      },
+      "response": {
+        "status": 204
+      }
+    },
+    {
+      "description": "A request to get a specific product",
+      "providerStates": [
+        {
+          "name": "Product 1 exists"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/api/inventory/1"
+      },
+      "response": {
+        "body": {
+          "id": 1,
+          "name": "Product Name",
+          "price": 10.0,
+          "stockQuantity": 100
+        },
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "matchingRules": {
+          "body": {
+            "$.name": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.price": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "decimal"
+                }
+              ]
+            },
+            "$.stockQuantity": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
+      }
+    },
+    {
+      "description": "A request to get all products",
+      "providerStates": [
+        {
+          "name": "Products exist"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/api/inventory"
+      },
+      "response": {
+        "body": [
+          {
+            "id": 1,
+            "name": "Product Name",
+            "price": 10.0,
+            "stockQuantity": 100
+          }
+        ],
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "matchingRules": {
+          "body": {
+            "$": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$[*].id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
+                }
+              ]
+            },
+            "$[*].name": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$[*].price": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "decimal"
+                }
+              ]
+            },
+            "$[*].stockQuantity": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
+      }
+    },
+    {
+      "description": "A request to reserve stock",
+      "providerStates": [
+        {
+          "name": "Product 1 has sufficient stock"
+        }
+      ],
+      "request": {
+        "body": {
+          "productId": 1,
+          "quantity": 1
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "method": "POST",
+        "path": "/api/inventory/reserve"
+      },
+      "response": {
+        "status": 200
+      }
+    }
+  ],
+  "metadata": {
+    "pactRust": {
+      "ffi": "0.4.27",
+      "models": "1.2.8"
+    },
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  },
+  "provider": {
+    "name": "InventoryService"
+  }
+}

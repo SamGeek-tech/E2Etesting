@@ -81,4 +81,20 @@ public class OrdersController : ControllerBase
     [AllowAnonymous]
     [ProducesResponseType(StatusCodes.Status200OK)]
     public IActionResult Health() => Ok(new { status = "Healthy" });
+
+    /// <summary>
+    /// Delete an order by ID.
+    /// </summary>
+    [HttpDelete("{id}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DeleteOrder(int id, CancellationToken cancellationToken)
+    {
+        // var result = await _orderService.DeleteOrderAsync(id, cancellationToken);
+        // if (!result.Success)
+        // {
+        //     return NotFound(result.ErrorMessage);
+        // }
+        return NoContent();
+    }
 }

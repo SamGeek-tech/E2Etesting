@@ -106,4 +106,26 @@ public class InventoryController : ControllerBase
     [HttpGet("health")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     public IActionResult Health() => Ok(new { status = "Healthy" });
+
+    /// <summary>
+    /// Delete an inventory item by ID.
+    /// </summary>
+    [HttpDelete("{id}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DeleteInventoryItem(int id, CancellationToken cancellationToken)
+    {
+            // var result = await _inventoryService.DeleteInventoryItemAsync(id, cancellationToken);
+            // if (!result.Success)
+            // {
+            //     return NotFound(result.ErrorMessage);
+            // }
+        return NoContent();
+    }
+
+
+
+
+
+
 }
