@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Net;
 using PactNet;
 using PactNet.Infrastructure.Outputters;
 using PactNet.Output.Xunit;
@@ -83,10 +84,40 @@ public class InventoryApiProviderTests : IDisposable
         _apiProcess.BeginOutputReadLine();
         _apiProcess.BeginErrorReadLine();
 
-        // Wait for server to start
+        // Wait for server to start (CI-safe). Don't rely on fixed sleeps.
         _output.WriteLine("Waiting for server to start...");
-        Thread.Sleep(10000); 
+        WaitForProviderHealthy();
         _output.WriteLine("Server should be ready now.");
+    }
+
+    private void WaitForProviderHealthy()
+    {
+        // Inventory health endpoint: /api/inventory/health
+        var healthUrl = $"{_providerUri}/api/inventory/health";
+        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
+
+        var deadline = DateTime.UtcNow.AddSeconds(45);
+        Exception? lastError = null;
+
+        while (DateTime.UtcNow < deadline)
+        {
+            try
+            {
+                var resp = http.GetAsync(healthUrl).GetAwaiter().GetResult();
+                if (resp.StatusCode == HttpStatusCode.OK)
+                {
+                    return;
+                }
+            }
+            catch (Exception ex)
+            {
+                lastError = ex;
+            }
+
+            Thread.Sleep(500);
+        }
+
+        throw new TimeoutException($"Provider did not become healthy at {healthUrl} within timeout. Last error: {lastError?.Message}");
     }
 
     public void Dispose()
