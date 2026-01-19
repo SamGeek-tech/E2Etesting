@@ -42,6 +42,11 @@ $brokerToken = $env:PACT_BROKER_TOKEN
 $brokerUsername = $env:PACT_BROKER_USERNAME
 $brokerPassword = $env:PACT_BROKER_PASSWORD
 
+# Handle unexpanded CI variables (e.g. "$(PactBrokerToken)")
+if ($brokerToken -like '*$(*') {
+    $brokerToken = $null
+}
+
 if (![string]::IsNullOrWhiteSpace($brokerToken)) {
     Write-Host "Authentication: Token (PactFlow)" -ForegroundColor Cyan
     $headers["Authorization"] = "Bearer $brokerToken"

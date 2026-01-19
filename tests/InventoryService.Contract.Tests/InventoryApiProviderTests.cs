@@ -135,7 +135,7 @@ public class InventoryApiProviderTests : IDisposable
     {
         // Get broker configuration from environment
         var pactBrokerUrlRaw = Environment.GetEnvironmentVariable("PACT_BROKER_BASE_URL");
-        var pactBrokerToken = Environment.GetEnvironmentVariable("PACT_BROKER_TOKEN");
+        var pactBrokerTokenRaw = Environment.GetEnvironmentVariable("PACT_BROKER_TOKEN");
         var pactBrokerUsername = Environment.GetEnvironmentVariable("PACT_BROKER_USERNAME");
         var pactBrokerPassword = Environment.GetEnvironmentVariable("PACT_BROKER_PASSWORD");
         var providerVersion = Environment.GetEnvironmentVariable("PROVIDER_VERSION") ?? "1.0.0";
@@ -157,16 +157,25 @@ public class InventoryApiProviderTests : IDisposable
 
         using var verifier = new PactVerifier("InventoryService", config);
 
+        static string? NormalizeVariable(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return null;
+
+            value = value.Trim();
+
+            // CI variables sometimes leak through unexpanded like "$(VarName)"
+            if (value.Contains("$(") && value.Contains(")"))
+                return null;
+
+            return value;
+        }
+
         static string? NormalizeBrokerUrl(string? url)
         {
-            if (string.IsNullOrWhiteSpace(url))
-                return null;
-
-            url = url.Trim();
-
-            // CI variables sometimes leak through unexpanded like "$(PactBrokerUrl)"
-            if (url.Contains("$(") && url.Contains(")"))
-                return null;
+            url = NormalizeVariable(url);
+            
+            if (url == null) return null;
 
             // Accept host:port and normalize to http://host:port
             if (!url.Contains("://", StringComparison.Ordinal))
@@ -177,6 +186,10 @@ public class InventoryApiProviderTests : IDisposable
 
         var pactBrokerUrl = NormalizeBrokerUrl(pactBrokerUrlRaw);
         
+        _output.WriteLine($"DEBUG: Raw Token: '{pactBrokerTokenRaw}'");
+        var pactBrokerToken = NormalizeVariable(pactBrokerTokenRaw);
+        _output.WriteLine($"DEBUG: Normalized Token: '{pactBrokerToken}'");
+
         // Determine authentication method
         bool hasToken = !string.IsNullOrEmpty(pactBrokerToken);
         bool hasBasicAuth = !string.IsNullOrEmpty(pactBrokerUsername) && !string.IsNullOrEmpty(pactBrokerPassword);

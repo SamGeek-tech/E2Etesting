@@ -15,6 +15,11 @@ param(
     [string]$BrokerUrl = $env:PACT_BROKER_BASE_URL
 )
 
+# Sanitize inputs (handle accidentally passed equals signs or quotes)
+$BrokerUrl = $BrokerUrl.Trim('=', '"', "'", ' ')
+$Pacticipant = $Pacticipant.Trim('=', '"', "'", ' ')
+$Version = $Version.Trim('=', '"', "'", ' ')
+
 $ErrorActionPreference = "Stop"
 
 Write-Host "========================================" -ForegroundColor Cyan
@@ -46,6 +51,11 @@ $brokerToken = $env:PACT_BROKER_TOKEN
 $brokerUsername = $env:PACT_BROKER_USERNAME
 $brokerPassword = $env:PACT_BROKER_PASSWORD
 
+# Handle unexpanded CI variables (e.g. "$(PactBrokerToken)")
+if ($brokerToken -like '*$(*') {
+    $brokerToken = $null
+}
+
 if (![string]::IsNullOrWhiteSpace($brokerToken)) {
     Write-Host "Authentication: Token (PactFlow)" -ForegroundColor Cyan
     $headers["Authorization"] = "Bearer $brokerToken"
@@ -60,7 +70,7 @@ else {
     Write-Host ""
     Write-Host "For self-hosted, set:" -ForegroundColor Yellow
     Write-Host "  `$env:PACT_BROKER_USERNAME='admin'" -ForegroundColor Gray
-    Write-Host "  `$env:PACT_BROKER_PASSWORD='admin'" -ForegroundColor Gray
+    Write-Host "  `$env:PACT_BROKER_PASSWORD='admin123!'" -ForegroundColor Gray
     exit 1
 }
 
