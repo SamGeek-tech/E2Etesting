@@ -206,7 +206,8 @@ public class InventoryApiProviderTests : IDisposable
                     
                     options.ConsumerVersionSelectors(
                         new ConsumerVersionSelector { MainBranch = true }, // Latest from main
-                        new ConsumerVersionSelector { DeployedOrReleased = true } // All deployed versions
+                        new ConsumerVersionSelector { DeployedOrReleased = true }, // All deployed versions
+                        new ConsumerVersionSelector { Latest = true } // Also verify the absolute latest version (catches PRs)
                     );
                     options.EnablePending(); // Don't fail on new pacts
                     

@@ -35,6 +35,7 @@ stages:
     # Install and Run GitVersion (using .NET Tool)
     - pwsh: |
         dotnet tool install --global GitVersion.Tool --version 5.*
+        $env:PATH = "$env:USERPROFILE\.dotnet\tools;$env:PATH"
         $out = dotnet-gitversion | ConvertFrom-Json
         
         # Set variables for subsequent steps
