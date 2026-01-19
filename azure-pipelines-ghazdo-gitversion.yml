@@ -514,7 +514,7 @@ stages:
       #
       # Both options use the same PactBrokerUrl variable
       # =============================================================================
-      PactBrokerUrl: 'https://pact-broker.orangeisland-078e5d22.centralus.azurecontainerapps.io/"
+      PactBrokerUrl: 'https://pact-broker.orangeisland-078e5d22.centralus.azurecontainerapps.io/'
       PactBrokerUsername: 'admin'                  
       PactBrokerPassword: 'admin123!'                
 
