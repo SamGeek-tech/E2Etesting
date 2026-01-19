@@ -32,16 +32,19 @@ stages:
       persistCredentials: true
       fetchDepth: 0 # Required for GitVersion to calculate version history
 
-    # Install and Run GitVersion
-    - task: gitversion/setup@0
-      displayName: 'Install GitVersion'
-      inputs:
-        versionSpec: '5.x'
-
-    - task: gitversion/execute@0
-      displayName: 'Determine Version'
-      inputs:
-        useConfigFile: false 
+    # Install and Run GitVersion (using .NET Tool)
+    - pwsh: |
+        dotnet tool install --global GitVersion.Tool --version 5.*
+        $out = dotnet-gitversion | ConvertFrom-Json
+        
+        # Set variables for subsequent steps
+        Write-Host "##vso[task.setvariable variable=GitVersion.SemVer]$($out.SemVer)"
+        Write-Host "##vso[task.setvariable variable=GitVersion.AssemblySemVer]$($out.AssemblySemVer)"
+        Write-Host "##vso[task.setvariable variable=GitVersion.MajorMinorPatch]$($out.MajorMinorPatch)"
+        
+        # Output for debugging
+        Write-Host "GitVersion calculated: $($out.SemVer)"
+      displayName: 'Install & Run GitVersion' 
 
     - pwsh: |
         Write-Host "GitVersion: $(GitVersion.SemVer)"
