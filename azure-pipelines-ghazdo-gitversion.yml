@@ -514,6 +514,10 @@ stages:
       #
       # Both options use the same PactBrokerUrl variable
       # =============================================================================
+      PactBrokerUrl: 'https://pact-broker.orangeisland-078e5d22.centralus.azurecontainerapps.io/"
+      PactBrokerUsername: 'admin'                  
+      PactBrokerPassword: 'admin123!'                
+
       PACT_BROKER_BASE_URL: $(PactBrokerUrl)
       # PactFlow (token auth)
       PACT_BROKER_TOKEN: $(PactBrokerToken)
