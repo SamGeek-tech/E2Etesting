@@ -1,18 +1,13 @@
 stages:
 - stage: UnitTests
   displayName: 'Unit Tests'
+  dependsOn: Build
   jobs:
   - job: Unit
     displayName: 'Run Unit Tests'
     pool:
       vmImage: 'windows-latest'
     steps:
-    - script: |
-        echo "Version: $(GitVersion.SemVer)"
-        dotnet test tests/UnitTests \
-          /p:Version=$(GitVersion.SemVer)
-      displayName: 'Run Unit Tests'
-      
     - task: UseDotNet@2
       inputs:
         packageType: 'sdk'

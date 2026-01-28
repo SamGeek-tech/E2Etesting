@@ -16,12 +16,6 @@ stages:
       PROVIDER_VERSION: $(Build.BuildId)
       PUBLISH_VERIFICATION_RESULTS: 'true'
     steps:
-    - script: |
-        echo "Version: $(GitVersion.SemVer)"
-        dotnet test tests/IntegrationTests \
-          /p:Version=$(GitVersion.SemVer)
-      displayName: 'Run Integration Tests'
-
     - task: UseDotNet@2
       inputs:
         packageType: 'sdk'
