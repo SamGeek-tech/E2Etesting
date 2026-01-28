@@ -42,11 +42,30 @@ stages:
     # Install and Run GitVersion using .NET Tool (reads GitVersion.yml automatically)
     - pwsh: |
         # Install GitVersion as .NET global tool
-        dotnet tool install --global GitVersion.Tool --version 5.*
+        dotnet tool install --global GitVersion.Tool --version 5.* 2>&1 | Out-Null
         $env:PATH = "$env:USERPROFILE\.dotnet\tools;$env:PATH"
         
-        # Run GitVersion (automatically uses GitVersion.yml from repo root)
-        $out = dotnet-gitversion | ConvertFrom-Json
+        # Run GitVersion with explicit JSON output format
+        $rawOutput = & dotnet-gitversion /output json 2>&1
+        
+        # Filter to get only the JSON part (skip any warning/info lines)
+        $jsonLines = $rawOutput | Where-Object { $_ -match '^\s*[\{\[]' -or $_ -match '^\s*"' -or $_ -match '^\s*[\}\]]' -or $_ -match '^\s*\d' }
+        $jsonString = $jsonLines -join "`n"
+        
+        # If filtering didn't work, try to find JSON object in output
+        if (-not $jsonString -or $jsonString -notmatch '\{') {
+            $jsonString = ($rawOutput | Out-String) -replace '(?s)^.*?(\{)', '$1' -replace '(\})(?s).*?$', '$1'
+        }
+        
+        try {
+            $out = $jsonString | ConvertFrom-Json
+        } catch {
+            Write-Host "Raw GitVersion output:"
+            Write-Host $rawOutput
+            Write-Host "Filtered JSON:"
+            Write-Host $jsonString
+            throw "Failed to parse GitVersion output: $_"
+        }
         
         # Set pipeline variables for use in subsequent steps/stages
         Write-Host "##vso[task.setvariable variable=SemVer;isOutput=true]$($out.SemVer)"
