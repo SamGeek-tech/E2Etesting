@@ -1,0 +1,162 @@
+# Release Pipeline - Multi-environment deployment with GitVersion
+# Deploys: Dev -> Staging -> Production -> Tag
+
+trigger:
+  branches:
+    include:
+      - master
+      - release/*
+
+pool:
+  vmImage: 'windows-latest'
+
+# =========================
+# VERSIONING
+# =========================
+stages:
+- stage: Versioning
+  displayName: 'Calculate Version'
+  jobs:
+  - job: GitVersion
+    displayName: 'Run GitVersion'
+    steps:
+    - checkout: self
+      persistCredentials: true
+      fetchDepth: 0  # Required for GitVersion
+
+    - task: UseDotNet@2
+      inputs:
+        packageType: 'sdk'
+        version: '8.x'
+      displayName: 'Setup .NET SDK'
+
+    # Install and Run GitVersion using .NET Tool (no marketplace extension required)
+    - pwsh: |
+        # Install GitVersion
+        dotnet tool install --global GitVersion.Tool --version 5.* 2>&1 | Out-Null
+        $env:PATH = "$env:USERPROFILE\.dotnet\tools;$env:PATH"
+        
+        # Run GitVersion and parse output
+        $rawOutput = & dotnet-gitversion /output json 2>&1
+        $jsonLines = $rawOutput | Where-Object { $_ -match '^\s*[\{\[]' -or $_ -match '^\s*"' -or $_ -match '^\s*[\}\]]' -or $_ -match '^\s*\d' }
+        $jsonString = $jsonLines -join "`n"
+        if (-not $jsonString -or $jsonString -notmatch '\{') {
+            $jsonString = ($rawOutput | Out-String) -replace '(?s)^.*?(\{)', '$1' -replace '(\})(?s).*?$', '$1'
+        }
+        $out = $jsonString | ConvertFrom-Json
+        
+        # Set output variables for use in other stages
+        Write-Host "##vso[task.setvariable variable=SemVer;isOutput=true]$($out.SemVer)"
+        Write-Host "##vso[task.setvariable variable=MajorMinorPatch;isOutput=true]$($out.MajorMinorPatch)"
+        Write-Host "##vso[task.setvariable variable=FullSemVer;isOutput=true]$($out.FullSemVer)"
+        
+        Write-Host "=========================================="
+        Write-Host "GitVersion: $($out.SemVer)"
+        Write-Host "Branch:     $($out.BranchName)"
+        Write-Host "=========================================="
+        
+        # Update build number
+        Write-Host "##vso[build.updatebuildnumber]$($out.SemVer)"
+      displayName: 'Run GitVersion'
+      name: gitversion
+
+# =========================
+# DEV
+# =========================
+- stage: Dev
+  displayName: 'Deploy to Dev'
+  dependsOn: Versioning
+  variables:
+    version: $[ stageDependencies.Versioning.GitVersion.outputs['gitversion.SemVer'] ]
+  jobs:
+  - deployment: DeployDev
+    displayName: 'Deploy to Dev Environment'
+    environment: dev
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - script: |
+              echo "=========================================="
+              echo "Deploying $(version) to DEV"
+              echo "=========================================="
+            displayName: 'Deploy to Dev'
+
+# =========================
+# STAGING
+# =========================
+- stage: Staging
+  displayName: 'Deploy to Staging'
+  dependsOn: Dev
+  variables:
+    version: $[ stageDependencies.Versioning.GitVersion.outputs['gitversion.SemVer'] ]
+  jobs:
+  - deployment: DeployStaging
+    displayName: 'Deploy to Staging Environment'
+    environment: staging
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - script: |
+              echo "=========================================="
+              echo "Deploying $(version) to STAGING"
+              echo "=========================================="
+            displayName: 'Deploy to Staging'
+
+# =========================
+# PRODUCTION
+# =========================
+- stage: Production
+  displayName: 'Deploy to Production'
+  dependsOn: Staging
+  variables:
+    version: $[ stageDependencies.Versioning.GitVersion.outputs['gitversion.SemVer'] ]
+  jobs:
+  - deployment: DeployProd
+    displayName: 'Deploy to Production Environment'
+    environment: production
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - script: |
+              echo "=========================================="
+              echo "Deploying $(version) to PRODUCTION"
+              echo "=========================================="
+            displayName: 'Deploy to Production'
+
+# =========================
+# TAG RELEASE
+# =========================
+- stage: TagRelease
+  displayName: 'Tag Production Release'
+  dependsOn: Production
+  condition: succeeded()
+  variables:
+    version: $[ stageDependencies.Versioning.GitVersion.outputs['gitversion.SemVer'] ]
+  jobs:
+  - job: Tag
+    displayName: 'Create Git Tag'
+    steps:
+    - checkout: self
+      persistCredentials: true
+      fetchDepth: 0
+
+    - pwsh: |
+        git config user.email "release@company.com"
+        git config user.name "Release Pipeline"
+        
+        $tag = "v$(version)"
+        Write-Host "Creating tag: $tag"
+        
+        # Check if tag already exists
+        $existingTag = git tag -l $tag
+        if ($existingTag) {
+          Write-Host "Tag $tag already exists, skipping"
+        } else {
+          git tag $tag
+          git push origin $tag
+          Write-Host "Tag $tag created and pushed successfully"
+        }
+      displayName: 'Create and Push Tag'
