@@ -1,13 +1,13 @@
 mode: ContinuousDelivery
 
 branches:
-  main:
-    regex: ^main$
+  master:
+    regex: ^master$
     increment: Minor
     is-release-branch: true
 
   feature:
-    regex: ^feature[/-]
+    regex: ^features[/-]
     increment: Minor
     tag: alpha
 

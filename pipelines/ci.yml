@@ -5,15 +5,15 @@
 trigger:
   branches:
     include:
-      - main
-      - feature/*
+      - master
+      - features/*
       - hotfix/*
 
 pr:
   branches:
     include:
-      - main
-      - feature/*
+      - master
+      - features/*
 
 pool:
   vmImage: 'windows-latest'
