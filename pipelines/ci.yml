@@ -1,5 +1,6 @@
 # CI Pipeline - Runs on feature branches and PRs
 # Executes: Build -> Unit Tests -> Contract Tests
+# Uses GitVersion (.NET Tool) with GitVersion.yml configuration
 
 trigger:
   branches:
@@ -22,30 +23,56 @@ variables:
   NUGET_PACKAGES: $(Pipeline.Workspace)/.nuget/packages
 
 stages:
-
-- stage: Versioning
-  displayName: "Calculate Version"
-  jobs:
-  - job: GitVersion
-    steps:
-    - checkout: self
-      fetchDepth: 0
-    - task: GitVersion@5
-      inputs:
-        runtime: core
-
-        
 - stage: Build
-  displayName: 'Build'
+  displayName: 'Build & Version'
   jobs:
   - job: Build
     displayName: 'Build Solution'
     steps:
+    - checkout: self
+      persistCredentials: true
+      fetchDepth: 0  # Required for GitVersion to calculate version history
+
     - task: UseDotNet@2
       inputs:
         packageType: 'sdk'
         version: '8.x'
       displayName: 'Setup .NET 8 SDK'
+
+    # Install and Run GitVersion using .NET Tool (reads GitVersion.yml automatically)
+    - pwsh: |
+        # Install GitVersion as .NET global tool
+        dotnet tool install --global GitVersion.Tool --version 5.*
+        $env:PATH = "$env:USERPROFILE\.dotnet\tools;$env:PATH"
+        
+        # Run GitVersion (automatically uses GitVersion.yml from repo root)
+        $out = dotnet-gitversion | ConvertFrom-Json
+        
+        # Set pipeline variables for use in subsequent steps/stages
+        Write-Host "##vso[task.setvariable variable=SemVer;isOutput=true]$($out.SemVer)"
+        Write-Host "##vso[task.setvariable variable=AssemblySemVer;isOutput=true]$($out.AssemblySemVer)"
+        Write-Host "##vso[task.setvariable variable=MajorMinorPatch;isOutput=true]$($out.MajorMinorPatch)"
+        Write-Host "##vso[task.setvariable variable=NuGetVersionV2;isOutput=true]$($out.NuGetVersionV2)"
+        Write-Host "##vso[task.setvariable variable=FullSemVer;isOutput=true]$($out.FullSemVer)"
+        
+        # Output version info
+        Write-Host "=========================================="
+        Write-Host "GitVersion Results (from GitVersion.yml)"
+        Write-Host "=========================================="
+        Write-Host "SemVer:         $($out.SemVer)"
+        Write-Host "FullSemVer:     $($out.FullSemVer)"
+        Write-Host "NuGetVersion:   $($out.NuGetVersionV2)"
+        Write-Host "AssemblySemVer: $($out.AssemblySemVer)"
+        Write-Host "Branch:         $($out.BranchName)"
+        Write-Host "=========================================="
+      displayName: 'Run GitVersion'
+      name: gitversion
+
+    # Update build number with semantic version
+    - pwsh: |
+        Write-Host "Updating build number to: $(gitversion.SemVer)"
+        Write-Host "##vso[build.updatebuildnumber]$(gitversion.SemVer)"
+      displayName: 'Update Build Number'
 
     - task: Cache@2
       inputs:
@@ -58,7 +85,7 @@ stages:
     - script: dotnet restore
       displayName: 'Restore Dependencies'
 
-    - script: dotnet build --configuration $(buildConfiguration) --no-restore
+    - script: dotnet build --configuration $(buildConfiguration) --no-restore /p:Version=$(gitversion.SemVer)
       displayName: 'Build Solution'
 
 - template: templates/unit-tests.yml
