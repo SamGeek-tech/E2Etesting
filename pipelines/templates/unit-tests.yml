@@ -1,0 +1,33 @@
+stages:
+- stage: UnitTests
+  displayName: 'Unit Tests'
+  jobs:
+  - job: Unit
+    displayName: 'Run Unit Tests'
+    pool:
+      vmImage: 'windows-latest'
+    steps:
+    - script: |
+        echo "Version: $(GitVersion.SemVer)"
+        dotnet test tests/UnitTests \
+          /p:Version=$(GitVersion.SemVer)
+      displayName: 'Run Unit Tests'
+      
+    - task: UseDotNet@2
+      inputs:
+        packageType: 'sdk'
+        version: '8.x'
+      displayName: 'Setup .NET 8 SDK'
+
+    - script: dotnet restore tests/Unit.Tests/Unit.Tests.csproj
+      displayName: 'Restore Unit Tests'
+
+    - script: dotnet test tests/Unit.Tests/Unit.Tests.csproj --configuration Release --logger trx --results-directory $(Build.ArtifactStagingDirectory)/TestResults
+      displayName: 'Run Unit Tests'
+
+    - task: PublishTestResults@2
+      inputs:
+        testResultsFormat: 'VSTest'
+        testResultsFiles: '$(Build.ArtifactStagingDirectory)/TestResults/*.trx'
+        testRunTitle: 'Unit Tests'
+      condition: always()

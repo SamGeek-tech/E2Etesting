@@ -1,0 +1,25 @@
+mode: ContinuousDelivery
+
+branches:
+  main:
+    regex: ^main$
+    increment: Minor
+    is-release-branch: true
+
+  feature:
+    regex: ^feature[/-]
+    increment: Minor
+    tag: alpha
+
+  release:
+    regex: ^release[/-]
+    increment: None
+    tag: rc
+
+  hotfix:
+    regex: ^hotfix[/-]
+    increment: Patch
+    tag: hotfix
+
+ignore:
+  sha: []

@@ -1,0 +1,65 @@
+# CI Pipeline - Runs on feature branches and PRs
+# Executes: Build -> Unit Tests -> Contract Tests
+
+trigger:
+  branches:
+    include:
+      - main
+      - feature/*
+      - hotfix/*
+
+pr:
+  branches:
+    include:
+      - main
+      - feature/*
+
+pool:
+  vmImage: 'windows-latest'
+
+variables:
+  buildConfiguration: 'Release'
+  NUGET_PACKAGES: $(Pipeline.Workspace)/.nuget/packages
+
+stages:
+
+- stage: Versioning
+  displayName: "Calculate Version"
+  jobs:
+  - job: GitVersion
+    steps:
+    - checkout: self
+      fetchDepth: 0
+    - task: GitVersion@5
+      inputs:
+        runtime: core
+
+        
+- stage: Build
+  displayName: 'Build'
+  jobs:
+  - job: Build
+    displayName: 'Build Solution'
+    steps:
+    - task: UseDotNet@2
+      inputs:
+        packageType: 'sdk'
+        version: '8.x'
+      displayName: 'Setup .NET 8 SDK'
+
+    - task: Cache@2
+      inputs:
+        key: 'nuget | "$(Agent.OS)" | **/*.csproj'
+        restoreKeys: |
+          nuget | "$(Agent.OS)"
+        path: $(NUGET_PACKAGES)
+      displayName: 'Cache NuGet packages'
+
+    - script: dotnet restore
+      displayName: 'Restore Dependencies'
+
+    - script: dotnet build --configuration $(buildConfiguration) --no-restore
+      displayName: 'Build Solution'
+
+- template: templates/unit-tests.yml
+- template: templates/integration-tests.yml

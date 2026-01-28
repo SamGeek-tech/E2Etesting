@@ -1,0 +1,129 @@
+stages:
+- stage: E2ETests
+  displayName: 'E2E Tests'
+  dependsOn: ContractTests
+  jobs:
+  # Playwright (.NET) E2E Tests
+  - job: PlaywrightDotNet
+    displayName: 'Playwright (.NET)'
+    pool:
+      vmImage: 'windows-latest'
+    steps:
+    - task: UseDotNet@2
+      inputs:
+        packageType: 'sdk'
+        version: '8.x'
+      displayName: 'Setup .NET 8 SDK'
+
+    - script: dotnet build tests/E2E.Tests/E2E.Tests.csproj --configuration Release
+      displayName: 'Build E2E Tests'
+
+    - pwsh: |
+        # Install Playwright browsers
+        $env:PLAYWRIGHT_BROWSERS_PATH = "$(Agent.TempDirectory)/pw-browsers"
+        dotnet tool install --global Microsoft.Playwright.CLI --version 1.40.0
+        playwright install chromium
+      displayName: 'Install Playwright Browsers'
+
+    - script: dotnet test tests/E2E.Tests/E2E.Tests.csproj --configuration Release --logger trx --results-directory $(Build.ArtifactStagingDirectory)/TestResults
+      displayName: 'Run Playwright E2E Tests'
+      env:
+        BASE_URL: $(E2E_BASE_URL)
+        PLAYWRIGHT_BROWSERS_PATH: $(Agent.TempDirectory)/pw-browsers
+
+    - task: PublishTestResults@2
+      inputs:
+        testResultsFormat: 'VSTest'
+        testResultsFiles: '$(Build.ArtifactStagingDirectory)/TestResults/*.trx'
+        testRunTitle: 'E2E Tests (Playwright .NET)'
+      condition: always()
+
+  # Cypress E2E Tests
+  - job: CypressTests
+    displayName: 'Cypress Tests'
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+    - task: NodeTool@0
+      inputs:
+        versionSpec: '18.x'
+      displayName: 'Setup Node.js'
+
+    - script: |
+        cd tests/Cypress.Tests
+        npm ci
+      displayName: 'Install Cypress Dependencies'
+
+    - script: |
+        cd tests/Cypress.Tests
+        npx cypress run --reporter junit --reporter-options mochaFile=cypress/results/results-[hash].xml
+      displayName: 'Run Cypress Tests'
+      env:
+        CYPRESS_BASE_URL: $(E2E_BASE_URL)
+
+    - task: PublishTestResults@2
+      inputs:
+        testResultsFormat: 'JUnit'
+        testResultsFiles: 'tests/Cypress.Tests/cypress/results/*.xml'
+        testRunTitle: 'E2E Tests (Cypress)'
+      condition: always()
+
+  # Playwright (Node.js) E2E Tests
+  - job: PlaywrightNode
+    displayName: 'Playwright (Node.js)'
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+    - task: NodeTool@0
+      inputs:
+        versionSpec: '18.x'
+      displayName: 'Setup Node.js'
+
+    - script: |
+        cd tests/PlaywrightNode.Tests
+        npm ci
+      displayName: 'Install Playwright Dependencies'
+
+    - script: |
+        cd tests/PlaywrightNode.Tests
+        npx playwright install --with-deps chromium
+      displayName: 'Install Playwright Browsers'
+
+    - script: |
+        cd tests/PlaywrightNode.Tests
+        npx playwright test --reporter=junit
+      displayName: 'Run Playwright Tests'
+      env:
+        BASE_URL: $(E2E_BASE_URL)
+        PLAYWRIGHT_JUNIT_OUTPUT_NAME: results.xml
+
+    - task: PublishTestResults@2
+      inputs:
+        testResultsFormat: 'JUnit'
+        testResultsFiles: 'tests/PlaywrightNode.Tests/results.xml'
+        testRunTitle: 'E2E Tests (Playwright Node)'
+      condition: always()
+
+  # Selenium E2E Tests
+  - job: SeleniumTests
+    displayName: 'Selenium Tests'
+    pool:
+      vmImage: 'windows-latest'
+    steps:
+    - task: UseDotNet@2
+      inputs:
+        packageType: 'sdk'
+        version: '8.x'
+      displayName: 'Setup .NET 8 SDK'
+
+    - script: dotnet test tests/Selenium.Tests/Selenium.Tests.csproj --configuration Release --logger trx --results-directory $(Build.ArtifactStagingDirectory)/TestResults
+      displayName: 'Run Selenium Tests'
+      env:
+        BASE_URL: $(E2E_BASE_URL)
+
+    - task: PublishTestResults@2
+      inputs:
+        testResultsFormat: 'VSTest'
+        testResultsFiles: '$(Build.ArtifactStagingDirectory)/TestResults/*.trx'
+        testRunTitle: 'E2E Tests (Selenium)'
+      condition: always()

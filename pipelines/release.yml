@@ -1,0 +1,77 @@
+# Release Pipeline - Runs on release branches and tags
+# Executes: Build -> Unit Tests -> Contract Tests -> E2E Tests
+
+trigger:
+  branches:
+    include:
+      - release/*
+  tags:
+    include:
+      - v*
+
+pool:
+  vmImage: 'windows-latest'
+
+variables:
+  buildConfiguration: 'Release'
+  NUGET_PACKAGES: $(Pipeline.Workspace)/.nuget/packages
+  # Set this variable in pipeline settings or variable group
+  E2E_BASE_URL: 'https://your-staging-app-url'
+
+stages:
+- stage: Versioning
+  displayName: "Calculate Version"
+  jobs:
+  - job: GitVersion
+    steps:
+    - checkout: self
+      fetchDepth: 0
+    - task: GitVersion@5
+      inputs:
+        runtime: core
+
+- stage: Build
+  displayName: 'Build'
+  jobs:
+  - job: Build
+    displayName: 'Build Solution'
+    steps:
+    - task: UseDotNet@2
+      inputs:
+        packageType: 'sdk'
+        version: '8.x'
+      displayName: 'Setup .NET 8 SDK'
+
+    - task: Cache@2
+      inputs:
+        key: 'nuget | "$(Agent.OS)" | **/*.csproj'
+        restoreKeys: |
+          nuget | "$(Agent.OS)"
+        path: $(NUGET_PACKAGES)
+      displayName: 'Cache NuGet packages'
+
+    - script: dotnet restore
+      displayName: 'Restore Dependencies'
+
+    - script: dotnet build --configuration $(buildConfiguration) --no-restore
+      displayName: 'Build Solution'
+
+- template: templates/unit-tests.yml
+- template: templates/integration-tests.yml
+- template: templates/e2e-tests.yml
+
+- stage: TagRelease
+  displayName: "Create Version Tag"
+  dependsOn: E2ETests
+  condition: succeeded()
+  jobs:
+  - job: Tag
+    steps:
+    - checkout: self
+      persistCredentials: true
+    - script: |
+        echo "Tagging version v$(GitVersion.SemVer)"
+        git config user.email "build@company.com"
+        git config user.name "Azure DevOps Pipeline"
+        git tag v$(GitVersion.SemVer)
+        git push origin v$(GitVersion.SemVer)

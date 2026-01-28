@@ -1,0 +1,73 @@
+stages:
+- stage: ContractTests
+  displayName: 'Contract Tests (Pact)'
+  dependsOn: UnitTests
+  jobs:
+  - job: ContractTests
+    displayName: 'Run Contract Tests'
+    pool:
+      vmImage: 'windows-latest'
+    variables:
+      # Configure these in pipeline variables (mark secrets as secret)
+      # Or use a variable group
+      PACT_BROKER_BASE_URL: 'https://pact-broker.orangeisland-078e5d22.centralus.azurecontainerapps.io'
+      PACT_BROKER_USERNAME: 'admin'
+      PACT_BROKER_PASSWORD: 'admin123!'
+      PROVIDER_VERSION: $(Build.BuildId)
+      PUBLISH_VERIFICATION_RESULTS: 'true'
+    steps:
+    - script: |
+        echo "Version: $(GitVersion.SemVer)"
+        dotnet test tests/IntegrationTests \
+          /p:Version=$(GitVersion.SemVer)
+      displayName: 'Run Integration Tests'
+
+    - task: UseDotNet@2
+      inputs:
+        packageType: 'sdk'
+        version: '8.x'
+      displayName: 'Setup .NET 8 SDK'
+
+    - script: dotnet restore
+      displayName: 'Restore Dependencies'
+
+    # Consumer Tests (generate pacts)
+    - script: dotnet test tests/OrderService.Contract.Tests/OrderService.Contract.Tests.csproj --filter "OrderClientTests" --configuration Release --logger trx --results-directory $(Build.ArtifactStagingDirectory)/TestResults
+      displayName: 'OrderService Consumer Tests'
+
+    - script: dotnet test tests/InventoryService.Contract.Tests/InventoryService.Contract.Tests.csproj --filter "InventoryClientTests" --configuration Release --logger trx --results-directory $(Build.ArtifactStagingDirectory)/TestResults
+      displayName: 'InventoryService Consumer Tests'
+
+    # Publish pacts to broker
+    - pwsh: |
+        .\publish-pacts.ps1 -Version "$(Build.BuildId)" -Branch "$(Build.SourceBranchName)" -BrokerUrl "$(PACT_BROKER_BASE_URL)"
+      displayName: 'Publish Pacts to Broker'
+      env:
+        PACT_BROKER_USERNAME: $(PACT_BROKER_USERNAME)
+        PACT_BROKER_PASSWORD: $(PACT_BROKER_PASSWORD)
+
+    # Provider Verification Tests
+    - script: dotnet test tests/OrderService.Contract.Tests/OrderService.Contract.Tests.csproj --filter "OrderApiProviderTests" --configuration Release --logger trx --results-directory $(Build.ArtifactStagingDirectory)/TestResults
+      displayName: 'OrderService Provider Verification'
+      env:
+        PACT_BROKER_BASE_URL: $(PACT_BROKER_BASE_URL)
+        PACT_BROKER_USERNAME: $(PACT_BROKER_USERNAME)
+        PACT_BROKER_PASSWORD: $(PACT_BROKER_PASSWORD)
+        PROVIDER_VERSION: $(Build.BuildId)
+        PUBLISH_VERIFICATION_RESULTS: 'true'
+
+    - script: dotnet test tests/InventoryService.Contract.Tests/InventoryService.Contract.Tests.csproj --filter "InventoryApiProviderTests" --configuration Release --logger trx --results-directory $(Build.ArtifactStagingDirectory)/TestResults
+      displayName: 'InventoryService Provider Verification'
+      env:
+        PACT_BROKER_BASE_URL: $(PACT_BROKER_BASE_URL)
+        PACT_BROKER_USERNAME: $(PACT_BROKER_USERNAME)
+        PACT_BROKER_PASSWORD: $(PACT_BROKER_PASSWORD)
+        PROVIDER_VERSION: $(Build.BuildId)
+        PUBLISH_VERIFICATION_RESULTS: 'true'
+
+    - task: PublishTestResults@2
+      inputs:
+        testResultsFormat: 'VSTest'
+        testResultsFiles: '$(Build.ArtifactStagingDirectory)/TestResults/*.trx'
+        testRunTitle: 'Contract Tests'
+      condition: always()
