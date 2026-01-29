@@ -272,12 +272,126 @@ stages:
               echo "=========================================="
             displayName: 'Deploy to Staging'
 
-# E2E tests must pass before Production release
-- stage: E2ETests
-  displayName: 'E2E Tests'
+# Before Production: run Unit + Contract + E2E in parallel
+- stage: PreProdTests
+  displayName: 'Pre-Production Tests (Parallel)'
   dependsOn:
     - Staging
   jobs:
+  # ==================== UNIT TESTS (PRE-PROD) ====================
+  - job: UnitTests_PreProd
+    displayName: 'Unit Tests (Pre-Prod)'
+    pool:
+      vmImage: 'windows-latest'
+    steps:
+    - checkout: none
+
+    - task: UseDotNet@2
+      inputs:
+        packageType: 'sdk'
+        version: '8.x'
+      displayName: 'Setup .NET 8 SDK'
+
+    - task: DownloadPipelineArtifact@2
+      inputs:
+        artifact: 'source-with-binaries'
+        path: '$(Build.SourcesDirectory)'
+      displayName: 'Download Built Source'
+
+    - pwsh: |
+        dotnet restore tests/Unit.Tests/Unit.Tests.csproj
+        dotnet test tests/Unit.Tests/Unit.Tests.csproj --configuration $(buildConfiguration) --no-build --logger "trx;LogFileName=unit_results.trx"
+      displayName: 'Run Unit Tests'
+      workingDirectory: '$(Build.SourcesDirectory)'
+
+    - task: PublishTestResults@2
+      inputs:
+        testResultsFormat: 'VSTest'
+        testResultsFiles: '**/unit_results.trx'
+        testRunTitle: 'Unit Tests (Pre-Prod)'
+        failTaskOnFailedTests: true
+      condition: always()
+
+  # ==================== CONTRACT TESTS (PRE-PROD) ====================
+  - job: ContractTests_PreProd
+    displayName: 'Contract Tests (Pre-Prod)'
+    pool:
+      vmImage: 'windows-latest'
+    variables:
+      # Configure these in pipeline variables (mark secrets as secret) or use a variable group
+      PACT_BROKER_BASE_URL: 'https://pact-broker.orangeisland-078e5d22.centralus.azurecontainerapps.io'
+      PACT_BROKER_USERNAME: 'admin'
+      PACT_BROKER_PASSWORD: 'admin123!'
+      PROVIDER_VERSION: $(Build.BuildId)
+      PUBLISH_VERIFICATION_RESULTS: 'true'
+    steps:
+    - checkout: none
+
+    - task: UseDotNet@2
+      inputs:
+        packageType: 'sdk'
+        version: '8.x'
+      displayName: 'Setup .NET 8 SDK'
+
+    - task: DownloadPipelineArtifact@2
+      inputs:
+        artifact: 'source-with-binaries'
+        path: '$(Build.SourcesDirectory)'
+      displayName: 'Download Built Source'
+
+    - script: dotnet restore
+      displayName: 'Restore Dependencies'
+      workingDirectory: '$(Build.SourcesDirectory)'
+
+    # Consumer Tests (generate pacts)
+    - script: dotnet test tests/OrderService.Contract.Tests/OrderService.Contract.Tests.csproj --filter "OrderClientTests" --configuration $(buildConfiguration) --no-build --logger trx --results-directory $(Build.ArtifactStagingDirectory)/TestResults
+      displayName: 'OrderService Consumer Tests'
+      workingDirectory: '$(Build.SourcesDirectory)'
+
+    - script: dotnet test tests/InventoryService.Contract.Tests/InventoryService.Contract.Tests.csproj --filter "InventoryClientTests" --configuration $(buildConfiguration) --no-build --logger trx --results-directory $(Build.ArtifactStagingDirectory)/TestResults
+      displayName: 'InventoryService Consumer Tests'
+      workingDirectory: '$(Build.SourcesDirectory)'
+
+    # Publish pacts to broker
+    - pwsh: |
+        .\publish-pacts.ps1 -Version "$(Build.BuildId)" -Branch "$(Build.SourceBranchName)" -BrokerUrl "$(PACT_BROKER_BASE_URL)"
+      displayName: 'Publish Pacts to Broker'
+      workingDirectory: '$(Build.SourcesDirectory)'
+      env:
+        PACT_BROKER_USERNAME: $(PACT_BROKER_USERNAME)
+        PACT_BROKER_PASSWORD: $(PACT_BROKER_PASSWORD)
+
+    # Provider Verification Tests
+    - script: dotnet test tests/OrderService.Contract.Tests/OrderService.Contract.Tests.csproj --filter "OrderApiProviderTests" --configuration $(buildConfiguration) --no-build --logger trx --results-directory $(Build.ArtifactStagingDirectory)/TestResults
+      displayName: 'OrderService Provider Verification'
+      continueOnError: true
+      workingDirectory: '$(Build.SourcesDirectory)'
+      env:
+        PACT_BROKER_BASE_URL: $(PACT_BROKER_BASE_URL)
+        PACT_BROKER_USERNAME: $(PACT_BROKER_USERNAME)
+        PACT_BROKER_PASSWORD: $(PACT_BROKER_PASSWORD)
+        PROVIDER_VERSION: $(Build.BuildId)
+        PUBLISH_VERIFICATION_RESULTS: 'true'
+
+    - script: dotnet test tests/InventoryService.Contract.Tests/InventoryService.Contract.Tests.csproj --filter "InventoryApiProviderTests" --configuration $(buildConfiguration) --no-build --logger trx --results-directory $(Build.ArtifactStagingDirectory)/TestResults
+      displayName: 'InventoryService Provider Verification'
+      continueOnError: true
+      workingDirectory: '$(Build.SourcesDirectory)'
+      env:
+        PACT_BROKER_BASE_URL: $(PACT_BROKER_BASE_URL)
+        PACT_BROKER_USERNAME: $(PACT_BROKER_USERNAME)
+        PACT_BROKER_PASSWORD: $(PACT_BROKER_PASSWORD)
+        PROVIDER_VERSION: $(Build.BuildId)
+        PUBLISH_VERIFICATION_RESULTS: 'true'
+
+    - task: PublishTestResults@2
+      inputs:
+        testResultsFormat: 'VSTest'
+        testResultsFiles: '$(Build.ArtifactStagingDirectory)/TestResults/*.trx'
+        testRunTitle: 'Contract Tests (Pre-Prod)'
+        failTaskOnFailedTests: true
+      condition: always()
+
   # Playwright (.NET) E2E Tests (builds + runs services locally)
   - job: PlaywrightDotNet
     displayName: 'Playwright (.NET)'
@@ -572,7 +686,7 @@ stages:
 - stage: Production
   displayName: 'Release to Production'
   dependsOn:
-    - E2ETests
+    - PreProdTests
     - Build
   jobs:
   - deployment: DeployProd
