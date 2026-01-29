@@ -66,12 +66,12 @@ stages:
 - stage: Dev
   displayName: 'Deploy to Dev'
   dependsOn: Versioning
-  variables:
-    version: $[ stageDependencies.Versioning.GitVersion.outputs['gitversion.SemVer'] ]
   jobs:
   - deployment: DeployDev
     displayName: 'Deploy to Dev Environment'
     environment: dev
+    variables:
+      version: $[ stageDependencies.Versioning.GitVersion.outputs['gitversion.SemVer'] ]
     strategy:
       runOnce:
         deploy:
@@ -87,13 +87,13 @@ stages:
 # =========================
 - stage: Staging
   displayName: 'Deploy to Staging'
-  dependsOn: Dev
-  variables:
-    version: $[ stageDependencies.Versioning.GitVersion.outputs['gitversion.SemVer'] ]
+  dependsOn: [Dev, Versioning]
   jobs:
   - deployment: DeployStaging
     displayName: 'Deploy to Staging Environment'
     environment: staging
+    variables:
+      version: $[ stageDependencies.Versioning.GitVersion.outputs['gitversion.SemVer'] ]
     strategy:
       runOnce:
         deploy:
@@ -109,13 +109,13 @@ stages:
 # =========================
 - stage: Production
   displayName: 'Deploy to Production'
-  dependsOn: Staging
-  variables:
-    version: $[ stageDependencies.Versioning.GitVersion.outputs['gitversion.SemVer'] ]
+  dependsOn: [Staging, Versioning]
   jobs:
   - deployment: DeployProd
     displayName: 'Deploy to Production Environment'
     environment: production
+    variables:
+      version: $[ stageDependencies.Versioning.GitVersion.outputs['gitversion.SemVer'] ]
     strategy:
       runOnce:
         deploy:
@@ -131,13 +131,13 @@ stages:
 # =========================
 - stage: TagRelease
   displayName: 'Tag Production Release'
-  dependsOn: Production
+  dependsOn: [Production, Versioning]
   condition: succeeded()
-  variables:
-    version: $[ stageDependencies.Versioning.GitVersion.outputs['gitversion.SemVer'] ]
   jobs:
   - job: Tag
     displayName: 'Create Git Tag'
+    variables:
+      version: $[ stageDependencies.Versioning.GitVersion.outputs['gitversion.SemVer'] ]
     steps:
     - checkout: self
       persistCredentials: true
