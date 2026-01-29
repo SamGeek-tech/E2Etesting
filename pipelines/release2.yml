@@ -147,7 +147,7 @@ stages:
         git config user.email "release@company.com"
         git config user.name "Release Pipeline"
         
-        $tag = "v$[ stageDependencies.Versioning.GitVersion.outputs['gitversion.SemVer'] ]"
+        $tag = "v$(stageDependencies.Versioning.GitVersion.outputs['gitversion.SemVer'] )"
         Write-Host "Creating tag: $tag"
         
         # Check if tag already exists
