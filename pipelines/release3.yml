@@ -1,0 +1,625 @@
+# Release3 Pipeline - Environment-gated release with tests
+# Flow:
+# Build & Version -> Unit Tests -> Deploy Dev -> Contract Tests -> Deploy Staging -> E2E Tests -> Deploy Prod -> Tag
+
+trigger:
+  branches:
+    include:
+      - master
+      - release/*
+
+pool:
+  vmImage: 'windows-latest'
+
+variables:
+  buildConfiguration: 'Release'
+  NUGET_PACKAGES: $(Pipeline.Workspace)/.nuget/packages
+  npm_config_cache: $(Pipeline.Workspace)/.npm
+  PLAYWRIGHT_BROWSERS_PATH: $(Pipeline.Workspace)/.playwright-browsers
+
+stages:
+- stage: Build
+  displayName: 'Build & Version'
+  jobs:
+  - job: Build
+    displayName: 'Build Solution'
+    steps:
+    - checkout: self
+      persistCredentials: true
+      fetchDepth: 0  # Required for GitVersion
+
+    - task: UseDotNet@2
+      inputs:
+        packageType: 'sdk'
+        version: '8.x'
+      displayName: 'Setup .NET 8 SDK'
+
+    # Install and Run GitVersion using .NET Tool (reads GitVersion.yml automatically)
+    - pwsh: |
+        dotnet tool install --global GitVersion.Tool --version 5.* 2>&1 | Out-Null
+        $env:PATH = "$env:USERPROFILE\.dotnet\tools;$env:PATH"
+
+        $rawOutput = & dotnet-gitversion /output json 2>&1
+        $jsonLines = $rawOutput | Where-Object { $_ -match '^\s*[\{\[]' -or $_ -match '^\s*"' -or $_ -match '^\s*[\}\]]' -or $_ -match '^\s*\d' }
+        $jsonString = $jsonLines -join "`n"
+        if (-not $jsonString -or $jsonString -notmatch '\{') {
+            $jsonString = ($rawOutput | Out-String) -replace '(?s)^.*?(\{)', '$1' -replace '(\})(?s).*?$', '$1'
+        }
+
+        try {
+            $out = $jsonString | ConvertFrom-Json
+        } catch {
+            Write-Host "Raw GitVersion output:"
+            Write-Host $rawOutput
+            Write-Host "Filtered JSON:"
+            Write-Host $jsonString
+            throw "Failed to parse GitVersion output: $_"
+        }
+
+        Write-Host "##vso[task.setvariable variable=SemVer;isOutput=true]$($out.SemVer)"
+        Write-Host "##vso[task.setvariable variable=FullSemVer;isOutput=true]$($out.FullSemVer)"
+        Write-Host "##vso[build.updatebuildnumber]$($out.SemVer)"
+
+        Write-Host "=========================================="
+        Write-Host "GitVersion: $($out.SemVer)"
+        Write-Host "Branch:     $($out.BranchName)"
+        Write-Host "=========================================="
+      displayName: 'Run GitVersion'
+      name: gitversion
+
+    - task: Cache@2
+      inputs:
+        key: 'nuget | "$(Agent.OS)" | **/*.csproj'
+        restoreKeys: |
+          nuget | "$(Agent.OS)"
+        path: $(NUGET_PACKAGES)
+      displayName: 'Cache NuGet packages'
+
+    - script: dotnet restore
+      displayName: 'Restore Dependencies'
+
+    - script: dotnet build --configuration $(buildConfiguration) --no-restore /p:Version=$(gitversion.SemVer)
+      displayName: 'Build Solution'
+
+    - task: PublishPipelineArtifact@1
+      inputs:
+        targetPath: '$(Build.SourcesDirectory)'
+        artifact: 'source-with-binaries'
+        publishLocation: 'pipeline'
+      displayName: 'Publish Built Source'
+
+# Unit tests must pass before Dev release (runs against build outputs)
+- stage: UnitTests
+  displayName: 'Unit Tests'
+  dependsOn: Build
+  condition: succeeded()
+  jobs:
+  - job: Unit
+    displayName: 'Run Unit Tests'
+    pool:
+      vmImage: 'windows-latest'
+    steps:
+    - checkout: none
+
+    - task: UseDotNet@2
+      inputs:
+        packageType: 'sdk'
+        version: '8.x'
+      displayName: 'Setup .NET 8 SDK'
+
+    - task: DownloadPipelineArtifact@2
+      inputs:
+        artifact: 'source-with-binaries'
+        path: '$(Build.SourcesDirectory)'
+      displayName: 'Download Built Source'
+
+    - pwsh: |
+        dotnet restore tests/Unit.Tests/Unit.Tests.csproj
+        dotnet test tests/Unit.Tests/Unit.Tests.csproj --configuration $(buildConfiguration) --no-build --logger "trx;LogFileName=unit_results.trx"
+      displayName: 'Run Unit Tests'
+      workingDirectory: '$(Build.SourcesDirectory)'
+
+    - task: PublishTestResults@2
+      inputs:
+        testResultsFormat: 'VSTest'
+        testResultsFiles: '**/unit_results.trx'
+        testRunTitle: 'Unit Tests'
+        failTaskOnFailedTests: true
+      condition: always()
+
+- stage: Dev
+  displayName: 'Release to Dev'
+  dependsOn:
+    - Build
+    - UnitTests
+  jobs:
+  - deployment: DeployDev
+    displayName: 'Deploy to Dev Environment'
+    environment: dev
+    variables:
+      version: $[ stageDependencies.Build.Build.outputs['gitversion.SemVer'] ]
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - script: |
+              echo "=========================================="
+              echo "Deploying $(version) to DEV"
+              echo "=========================================="
+            displayName: 'Deploy to Dev'
+
+# Contract tests must pass before Staging release
+- stage: ContractTests
+  displayName: 'Contract Tests (Pact)'
+  dependsOn:
+    - Dev
+  jobs:
+  - job: ContractTests
+    displayName: 'Run Contract Tests'
+    pool:
+      vmImage: 'windows-latest'
+    variables:
+      # Configure these in pipeline variables (mark secrets as secret) or use a variable group
+      PACT_BROKER_BASE_URL: 'https://pact-broker.orangeisland-078e5d22.centralus.azurecontainerapps.io'
+      PACT_BROKER_USERNAME: 'admin'
+      PACT_BROKER_PASSWORD: 'admin123!'
+      PROVIDER_VERSION: $(Build.BuildId)
+      PUBLISH_VERIFICATION_RESULTS: 'true'
+    steps:
+    - checkout: none
+
+    - task: UseDotNet@2
+      inputs:
+        packageType: 'sdk'
+        version: '8.x'
+      displayName: 'Setup .NET 8 SDK'
+
+    - task: DownloadPipelineArtifact@2
+      inputs:
+        artifact: 'source-with-binaries'
+        path: '$(Build.SourcesDirectory)'
+      displayName: 'Download Built Source'
+
+    - script: dotnet restore
+      displayName: 'Restore Dependencies'
+
+    # Consumer Tests (generate pacts)
+    - script: dotnet test tests/OrderService.Contract.Tests/OrderService.Contract.Tests.csproj --filter "OrderClientTests" --configuration $(buildConfiguration) --no-build --logger trx --results-directory $(Build.ArtifactStagingDirectory)/TestResults
+      displayName: 'OrderService Consumer Tests'
+
+    - script: dotnet test tests/InventoryService.Contract.Tests/InventoryService.Contract.Tests.csproj --filter "InventoryClientTests" --configuration $(buildConfiguration) --no-build --logger trx --results-directory $(Build.ArtifactStagingDirectory)/TestResults
+      displayName: 'InventoryService Consumer Tests'
+
+    # Publish pacts to broker
+    - pwsh: |
+        .\publish-pacts.ps1 -Version "$(Build.BuildId)" -Branch "$(Build.SourceBranchName)" -BrokerUrl "$(PACT_BROKER_BASE_URL)"
+      displayName: 'Publish Pacts to Broker'
+      env:
+        PACT_BROKER_USERNAME: $(PACT_BROKER_USERNAME)
+        PACT_BROKER_PASSWORD: $(PACT_BROKER_PASSWORD)
+
+    # Verify pacts were published
+    - pwsh: |
+        Write-Host "Verifying pacts were published to broker..."
+        $auth = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("$(PACT_BROKER_USERNAME):$(PACT_BROKER_PASSWORD)"))
+        $headers = @{ "Authorization" = "Basic $auth"; "Accept" = "application/hal+json" }
+
+        try {
+            $response = Invoke-RestMethod -Uri "$(PACT_BROKER_BASE_URL)/pacts/provider/OrderServiceApi/latest" -Headers $headers -Method Get
+            Write-Host "[OK] Found pacts for OrderServiceApi"
+            Write-Host "Consumer: $($response._links.consumer.name)"
+        } catch {
+            Write-Host "[WARNING] No pacts found for OrderServiceApi yet"
+            Write-Host "This may be expected on first run. Provider verification will be skipped."
+        }
+
+        try {
+            $response = Invoke-RestMethod -Uri "$(PACT_BROKER_BASE_URL)/pacts/provider/InventoryService/latest" -Headers $headers -Method Get
+            Write-Host "[OK] Found pacts for InventoryService"
+            Write-Host "Consumer: $($response._links.consumer.name)"
+        } catch {
+            Write-Host "[WARNING] No pacts found for InventoryService yet"
+        }
+      displayName: 'Verify Pacts Published'
+      continueOnError: true
+
+    # Provider Verification Tests
+    - script: dotnet test tests/OrderService.Contract.Tests/OrderService.Contract.Tests.csproj --filter "OrderApiProviderTests" --configuration $(buildConfiguration) --no-build --logger trx --results-directory $(Build.ArtifactStagingDirectory)/TestResults
+      displayName: 'OrderService Provider Verification'
+      continueOnError: true
+      env:
+        PACT_BROKER_BASE_URL: $(PACT_BROKER_BASE_URL)
+        PACT_BROKER_USERNAME: $(PACT_BROKER_USERNAME)
+        PACT_BROKER_PASSWORD: $(PACT_BROKER_PASSWORD)
+        PROVIDER_VERSION: $(Build.BuildId)
+        PUBLISH_VERIFICATION_RESULTS: 'true'
+
+    - script: dotnet test tests/InventoryService.Contract.Tests/InventoryService.Contract.Tests.csproj --filter "InventoryApiProviderTests" --configuration $(buildConfiguration) --no-build --logger trx --results-directory $(Build.ArtifactStagingDirectory)/TestResults
+      displayName: 'InventoryService Provider Verification'
+      continueOnError: true
+      env:
+        PACT_BROKER_BASE_URL: $(PACT_BROKER_BASE_URL)
+        PACT_BROKER_USERNAME: $(PACT_BROKER_USERNAME)
+        PACT_BROKER_PASSWORD: $(PACT_BROKER_PASSWORD)
+        PROVIDER_VERSION: $(Build.BuildId)
+        PUBLISH_VERIFICATION_RESULTS: 'true'
+
+    - task: PublishTestResults@2
+      inputs:
+        testResultsFormat: 'VSTest'
+        testResultsFiles: '$(Build.ArtifactStagingDirectory)/TestResults/*.trx'
+        testRunTitle: 'Contract Tests'
+      condition: always()
+
+- stage: Staging
+  displayName: 'Release to Staging'
+  dependsOn:
+    - ContractTests
+    - Build
+  jobs:
+  - deployment: DeployStaging
+    displayName: 'Deploy to Staging Environment'
+    environment: staging
+    variables:
+      version: $[ stageDependencies.Build.Build.outputs['gitversion.SemVer'] ]
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - script: |
+              echo "=========================================="
+              echo "Deploying $(version) to STAGING"
+              echo "=========================================="
+            displayName: 'Deploy to Staging'
+
+# E2E tests must pass before Production release
+- stage: E2ETests
+  displayName: 'E2E Tests'
+  dependsOn:
+    - Staging
+  jobs:
+  # Playwright (.NET) E2E Tests (builds + runs services locally)
+  - job: PlaywrightDotNet
+    displayName: 'Playwright (.NET)'
+    pool:
+      vmImage: 'windows-latest'
+    steps:
+    - checkout: none
+
+    - task: UseDotNet@2
+      inputs:
+        packageType: 'sdk'
+        version: '8.x'
+      displayName: 'Setup .NET 8 SDK'
+
+    - task: DownloadPipelineArtifact@2
+      inputs:
+        artifact: 'source-with-binaries'
+        path: '$(Build.SourcesDirectory)'
+      displayName: 'Download Built Source'
+
+    - task: Cache@2
+      inputs:
+        key: 'playwright-dotnet | "$(Agent.OS)" | tests/E2E.Tests/E2E.Tests.csproj'
+        path: $(PLAYWRIGHT_BROWSERS_PATH)
+      displayName: 'Cache Playwright Browsers'
+
+    - pwsh: |
+        $scriptPath = "tests/E2E.Tests/bin/$(buildConfiguration)/net8.0/playwright.ps1"
+        if (Test-Path $scriptPath) {
+          pwsh -ExecutionPolicy Bypass -File $scriptPath install --with-deps chromium
+        } else {
+          dotnet tool update --global Microsoft.Playwright.CLI 2>$null
+          playwright install --with-deps chromium
+        }
+      displayName: 'Install Playwright Browsers'
+      workingDirectory: '$(Build.SourcesDirectory)'
+      env:
+        PLAYWRIGHT_BROWSERS_PATH: $(PLAYWRIGHT_BROWSERS_PATH)
+
+    - pwsh: |
+        Write-Host "Starting services..."
+        $env:ASPNETCORE_ENVIRONMENT = "Development"
+
+        $invProc = Start-Process dotnet -ArgumentList "run","--project","src/InventoryService.Api/InventoryService.Api.csproj","--configuration","$(buildConfiguration)","--no-build","--urls=http://127.0.0.1:5001" -PassThru -RedirectStandardOutput inv.log -RedirectStandardError inv_err.log
+        $ordProc = Start-Process dotnet -ArgumentList "run","--project","src/OrderService.Api/OrderService.Api.csproj","--configuration","$(buildConfiguration)","--no-build","--urls=http://127.0.0.1:5000" -PassThru -RedirectStandardOutput ord.log -RedirectStandardError ord_err.log
+        $webProc = Start-Process dotnet -ArgumentList "run","--project","src/OrderWeb.Mvc/OrderWeb.Mvc.csproj","--configuration","$(buildConfiguration)","--no-build","--urls=http://127.0.0.1:5002" -PassThru -RedirectStandardOutput web.log -RedirectStandardError web_err.log
+
+        $maxWait = 90; $elapsed = 0
+        while ($elapsed -lt $maxWait) {
+          Start-Sleep -Seconds 2; $elapsed += 2
+          $webOk = $invOk = $ordOk = $false
+          try { Invoke-WebRequest "http://127.0.0.1:5002" -TimeoutSec 2 -UseBasicParsing -EA Stop | Out-Null; $webOk = $true } catch {}
+          try { Invoke-WebRequest "http://127.0.0.1:5001/api/inventory" -TimeoutSec 2 -UseBasicParsing -EA Stop | Out-Null; $invOk = $true } catch {}
+          try { Invoke-WebRequest "http://127.0.0.1:5000/swagger/index.html" -TimeoutSec 2 -UseBasicParsing -EA Stop | Out-Null; $ordOk = $true } catch {}
+          if ($webOk -and $invOk -and $ordOk) { Write-Host "All services ready in $elapsed`s"; break }
+          Write-Host "[$elapsed`s] Web:$(if($webOk){'OK'}else{'..'}) Inv:$(if($invOk){'OK'}else{'..'}) Ord:$(if($ordOk){'OK'}else{'..'})"
+        }
+        if (-not ($webOk -and $invOk -and $ordOk)) { Get-Content inv_err.log,ord_err.log,web_err.log -EA SilentlyContinue; exit 1 }
+
+        Write-Host "Running Playwright .NET tests..."
+        try {
+          dotnet test tests/E2E.Tests/E2E.Tests.csproj --configuration $(buildConfiguration) --no-build --settings tests/E2E.Tests/.runsettings --logger "trx;LogFileName=playwright_results.trx"
+        } finally {
+          Stop-Process -Id $invProc.Id,$ordProc.Id,$webProc.Id -Force -EA SilentlyContinue
+          Write-Host "Services stopped"
+        }
+      displayName: 'Start Services & Run Tests'
+      workingDirectory: '$(Build.SourcesDirectory)'
+      env:
+        BASE_URL: 'http://127.0.0.1:5002'
+        PLAYWRIGHT_BROWSERS_PATH: $(PLAYWRIGHT_BROWSERS_PATH)
+
+    - task: PublishTestResults@2
+      condition: always()
+      inputs:
+        testResultsFormat: 'VSTest'
+        testResultsFiles: '**/playwright_results.trx'
+        testRunTitle: 'E2E Tests (Playwright .NET)'
+        failTaskOnFailedTests: true
+
+  # Cypress E2E Tests (builds + runs services locally)
+  - job: CypressTests
+    displayName: 'Cypress Tests'
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+    - checkout: none
+
+    - task: NodeTool@0
+      inputs:
+        versionSpec: '20.x'
+      displayName: 'Setup Node.js'
+
+    - task: UseDotNet@2
+      inputs:
+        packageType: 'sdk'
+        version: '8.x'
+      displayName: 'Setup .NET SDK'
+
+    - task: DownloadPipelineArtifact@2
+      inputs:
+        artifact: 'source-with-binaries'
+        path: '$(Build.SourcesDirectory)'
+      displayName: 'Download Built Source'
+
+    - pwsh: |
+        Push-Location tests/Cypress.Tests
+        npm ci
+        Pop-Location
+      displayName: 'Install Cypress Dependencies'
+      workingDirectory: '$(Build.SourcesDirectory)'
+
+    - pwsh: |
+        Write-Host "Starting services..."
+        $env:ASPNETCORE_ENVIRONMENT = "Development"
+
+        $invProc = Start-Process dotnet -ArgumentList "run","--project","src/InventoryService.Api/InventoryService.Api.csproj","--configuration","$(buildConfiguration)","--no-build","--urls=http://127.0.0.1:5001" -PassThru -RedirectStandardOutput inv.log -RedirectStandardError inv_err.log
+        $ordProc = Start-Process dotnet -ArgumentList "run","--project","src/OrderService.Api/OrderService.Api.csproj","--configuration","$(buildConfiguration)","--no-build","--urls=http://127.0.0.1:5000" -PassThru -RedirectStandardOutput ord.log -RedirectStandardError ord_err.log
+        $webProc = Start-Process dotnet -ArgumentList "run","--project","src/OrderWeb.Mvc/OrderWeb.Mvc.csproj","--configuration","$(buildConfiguration)","--no-build","--urls=http://127.0.0.1:5002" -PassThru -RedirectStandardOutput web.log -RedirectStandardError web_err.log
+
+        $maxWait = 90; $elapsed = 0
+        while ($elapsed -lt $maxWait) {
+          Start-Sleep -Seconds 2; $elapsed += 2
+          $webOk = $invOk = $ordOk = $false
+          try { Invoke-WebRequest "http://127.0.0.1:5002" -TimeoutSec 2 -UseBasicParsing -EA Stop | Out-Null; $webOk = $true } catch {}
+          try { Invoke-WebRequest "http://127.0.0.1:5001/api/inventory" -TimeoutSec 2 -UseBasicParsing -EA Stop | Out-Null; $invOk = $true } catch {}
+          try { Invoke-WebRequest "http://127.0.0.1:5000/swagger/index.html" -TimeoutSec 2 -UseBasicParsing -EA Stop | Out-Null; $ordOk = $true } catch {}
+          if ($webOk -and $invOk -and $ordOk) { Write-Host "All services ready in $elapsed`s"; break }
+        }
+        if (-not ($webOk -and $invOk -and $ordOk)) { Get-Content inv_err.log,ord_err.log,web_err.log -EA SilentlyContinue; exit 1 }
+
+        Write-Host "Running Cypress tests..."
+        Push-Location "tests/Cypress.Tests"
+        try {
+          npx cypress run --browser chrome --reporter junit --reporter-options mochaFile=cypress/results/results-[hash].xml
+        } finally {
+          Pop-Location
+          Stop-Process -Id $invProc.Id,$ordProc.Id,$webProc.Id -Force -EA SilentlyContinue
+          Write-Host "Services stopped"
+        }
+      displayName: 'Start Services & Run Tests'
+      workingDirectory: '$(Build.SourcesDirectory)'
+      env:
+        CYPRESS_baseUrl: 'http://127.0.0.1:5002'
+
+    - task: PublishTestResults@2
+      condition: always()
+      inputs:
+        testResultsFormat: 'JUnit'
+        testResultsFiles: 'tests/Cypress.Tests/cypress/results/*.xml'
+        testRunTitle: 'E2E Tests (Cypress)'
+        failTaskOnFailedTests: true
+
+  # Playwright (Node.js) E2E Tests (builds + runs services locally)
+  - job: PlaywrightNode
+    displayName: 'Playwright (Node.js)'
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+    - checkout: none
+
+    - task: NodeTool@0
+      inputs:
+        versionSpec: '20.x'
+      displayName: 'Setup Node.js'
+
+    - task: UseDotNet@2
+      inputs:
+        packageType: 'sdk'
+        version: '8.x'
+      displayName: 'Setup .NET SDK'
+
+    - task: DownloadPipelineArtifact@2
+      inputs:
+        artifact: 'source-with-binaries'
+        path: '$(Build.SourcesDirectory)'
+      displayName: 'Download Built Source'
+
+    - pwsh: |
+        Push-Location tests/PlaywrightNode.Tests
+        npm ci
+        npx playwright install --with-deps chromium
+        Pop-Location
+      displayName: 'Install Playwright Dependencies'
+      workingDirectory: '$(Build.SourcesDirectory)'
+
+    - pwsh: |
+        Write-Host "Starting services..."
+        $env:ASPNETCORE_ENVIRONMENT = "Development"
+
+        $invProc = Start-Process dotnet -ArgumentList "run","--project","src/InventoryService.Api/InventoryService.Api.csproj","--configuration","$(buildConfiguration)","--no-build","--urls=http://127.0.0.1:5001" -PassThru -RedirectStandardOutput inv.log -RedirectStandardError inv_err.log
+        $ordProc = Start-Process dotnet -ArgumentList "run","--project","src/OrderService.Api/OrderService.Api.csproj","--configuration","$(buildConfiguration)","--no-build","--urls=http://127.0.0.1:5000" -PassThru -RedirectStandardOutput ord.log -RedirectStandardError ord_err.log
+        $webProc = Start-Process dotnet -ArgumentList "run","--project","src/OrderWeb.Mvc/OrderWeb.Mvc.csproj","--configuration","$(buildConfiguration)","--no-build","--urls=http://127.0.0.1:5002" -PassThru -RedirectStandardOutput web.log -RedirectStandardError web_err.log
+
+        $maxWait = 90; $elapsed = 0
+        while ($elapsed -lt $maxWait) {
+          Start-Sleep -Seconds 2; $elapsed += 2
+          $webOk = $invOk = $ordOk = $false
+          try { Invoke-WebRequest "http://127.0.0.1:5002" -TimeoutSec 2 -UseBasicParsing -EA Stop | Out-Null; $webOk = $true } catch {}
+          try { Invoke-WebRequest "http://127.0.0.1:5001/api/inventory" -TimeoutSec 2 -UseBasicParsing -EA Stop | Out-Null; $invOk = $true } catch {}
+          try { Invoke-WebRequest "http://127.0.0.1:5000/swagger/index.html" -TimeoutSec 2 -UseBasicParsing -EA Stop | Out-Null; $ordOk = $true } catch {}
+          if ($webOk -and $invOk -and $ordOk) { Write-Host "All services ready in $elapsed`s"; break }
+        }
+        if (-not ($webOk -and $invOk -and $ordOk)) { Get-Content inv_err.log,ord_err.log,web_err.log -EA SilentlyContinue; exit 1 }
+
+        Write-Host "Running Playwright Node.js tests..."
+        Push-Location "tests/PlaywrightNode.Tests"
+        try {
+          npx playwright test --reporter=junit
+        } finally {
+          Pop-Location
+          Stop-Process -Id $invProc.Id,$ordProc.Id,$webProc.Id -Force -EA SilentlyContinue
+          Write-Host "Services stopped"
+        }
+      displayName: 'Start Services & Run Tests'
+      workingDirectory: '$(Build.SourcesDirectory)'
+      env:
+        BASE_URL: 'http://127.0.0.1:5002'
+        PLAYWRIGHT_JUNIT_OUTPUT_NAME: results.xml
+
+    - task: PublishTestResults@2
+      condition: always()
+      inputs:
+        testResultsFormat: 'JUnit'
+        testResultsFiles: 'tests/PlaywrightNode.Tests/results.xml'
+        testRunTitle: 'E2E Tests (Playwright Node)'
+        failTaskOnFailedTests: true
+
+  # Selenium E2E Tests (builds + runs services locally)
+  - job: SeleniumTests
+    displayName: 'Selenium Tests'
+    pool:
+      vmImage: 'windows-latest'
+    steps:
+    - checkout: none
+
+    - task: UseDotNet@2
+      inputs:
+        packageType: 'sdk'
+        version: '8.x'
+      displayName: 'Setup .NET 8 SDK'
+
+    - task: DownloadPipelineArtifact@2
+      inputs:
+        artifact: 'source-with-binaries'
+        path: '$(Build.SourcesDirectory)'
+      displayName: 'Download Built Source'
+
+    - pwsh: |
+        Write-Host "Starting services..."
+        $env:ASPNETCORE_ENVIRONMENT = "Development"
+
+        $invProc = Start-Process dotnet -ArgumentList "run","--project","src/InventoryService.Api/InventoryService.Api.csproj","--configuration","$(buildConfiguration)","--no-build","--urls=http://127.0.0.1:5001" -PassThru -RedirectStandardOutput inv.log -RedirectStandardError inv_err.log
+        $ordProc = Start-Process dotnet -ArgumentList "run","--project","src/OrderService.Api/OrderService.Api.csproj","--configuration","$(buildConfiguration)","--no-build","--urls=http://127.0.0.1:5000" -PassThru -RedirectStandardOutput ord.log -RedirectStandardError ord_err.log
+        $webProc = Start-Process dotnet -ArgumentList "run","--project","src/OrderWeb.Mvc/OrderWeb.Mvc.csproj","--configuration","$(buildConfiguration)","--no-build","--urls=http://127.0.0.1:5002" -PassThru -RedirectStandardOutput web.log -RedirectStandardError web_err.log
+
+        $maxWait = 90; $elapsed = 0
+        while ($elapsed -lt $maxWait) {
+          Start-Sleep -Seconds 2; $elapsed += 2
+          $webOk = $invOk = $ordOk = $false
+          try { Invoke-WebRequest "http://127.0.0.1:5002" -TimeoutSec 2 -UseBasicParsing -EA Stop | Out-Null; $webOk = $true } catch {}
+          try { Invoke-WebRequest "http://127.0.0.1:5001/api/inventory" -TimeoutSec 2 -UseBasicParsing -EA Stop | Out-Null; $invOk = $true } catch {}
+          try { Invoke-WebRequest "http://127.0.0.1:5000/swagger/index.html" -TimeoutSec 2 -UseBasicParsing -EA Stop | Out-Null; $ordOk = $true } catch {}
+          if ($webOk -and $invOk -and $ordOk) { Write-Host "All services ready in $elapsed`s"; break }
+        }
+        if (-not ($webOk -and $invOk -and $ordOk)) { Get-Content inv_err.log,ord_err.log,web_err.log -EA SilentlyContinue; exit 1 }
+
+        Write-Host "Running Selenium tests..."
+        $testResult = 0
+        try {
+          dotnet test tests/Selenium.Tests/Selenium.Tests.csproj --configuration $(buildConfiguration) --no-build --logger "trx;LogFileName=selenium_results.trx"
+          $testResult = $LASTEXITCODE
+        } finally {
+          Stop-Process -Id $invProc.Id,$ordProc.Id,$webProc.Id -Force -EA SilentlyContinue
+          Write-Host "Services stopped"
+        }
+        exit $testResult
+      displayName: 'Start Services & Run Tests'
+      workingDirectory: '$(Build.SourcesDirectory)'
+      env:
+        BASE_URL: 'http://127.0.0.1:5002'
+        HEADLESS_MODE: 'true'
+
+    - task: PublishTestResults@2
+      condition: always()
+      inputs:
+        testResultsFormat: 'VSTest'
+        testResultsFiles: '**/selenium_results.trx'
+        testRunTitle: 'E2E Tests (Selenium)'
+        failTaskOnFailedTests: true
+
+- stage: Production
+  displayName: 'Release to Production'
+  dependsOn:
+    - E2ETests
+    - Build
+  jobs:
+  - deployment: DeployProd
+    displayName: 'Deploy to Production Environment'
+    environment: production
+    variables:
+      version: $[ stageDependencies.Build.Build.outputs['gitversion.SemVer'] ]
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - script: |
+              echo "=========================================="
+              echo "Deploying $(version) to PRODUCTION"
+              echo "=========================================="
+            displayName: 'Deploy to Production'
+
+- stage: TagRelease
+  displayName: 'Tag Production Release'
+  dependsOn:
+    - Production
+    - Build
+  condition: succeeded()
+  jobs:
+  - job: Tag
+    displayName: 'Create Git Tag'
+    variables:
+      version: $[ stageDependencies.Build.Build.outputs['gitversion.SemVer'] ]
+    steps:
+    - checkout: self
+      persistCredentials: true
+      fetchDepth: 0
+
+    - pwsh: |
+        git config user.email "release@company.com"
+        git config user.name "Release Pipeline"
+
+        $tag = "v$(version)"
+        Write-Host "Creating tag: $tag"
+
+        $existingTag = git tag -l $tag
+        if ($existingTag) {
+          Write-Host "Tag $tag already exists, skipping"
+        } else {
+          git tag $tag
+          git push origin $tag
+          Write-Host "Tag $tag created and pushed successfully"
+        }
+      displayName: 'Create and Push Tag'
+
